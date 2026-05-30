@@ -1,10 +1,17 @@
 from contextlib import asynccontextmanager
 import sqlite3
+from time import perf_counter
+from uuid import UUID, uuid4
 
-from fastapi import Depends, FastAPI, HTTPException, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from opentelemetry import trace
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from pydantic import BaseModel, ConfigDict, Field
 
-from todo_api.database import get_connection, initialize_database
+from todo_api.database import execute, get_connection, initialize_database
+from todo_api.observability import SERVICE_NAME, observability
+
+DEMO_USER_ID = "demo-user"
 
 
 class TodoCreate(BaseModel):
@@ -27,9 +34,91 @@ class Todo(BaseModel):
 async def lifespan(_: FastAPI):
     initialize_database()
     yield
+    observability.shutdown()
 
 
 app = FastAPI(title="Todo API", lifespan=lifespan)
+
+
+def validated_uuid(value: str | None) -> str | None:
+    if value is None:
+        return None
+    try:
+        return str(UUID(value))
+    except ValueError:
+        return None
+
+
+def path_template(request: Request) -> str:
+    route = request.scope.get("route")
+    return getattr(route, "path", request.url.path)
+
+
+@app.middleware("http")
+async def record_completed_request(request: Request, call_next) -> Response:
+    if request.url.path == "/health":
+        return await call_next(request)
+
+    started_at = perf_counter()
+    request_id = validated_uuid(request.headers.get("x-request-id")) or str(uuid4())
+    run_id = validated_uuid(request.headers.get("x-workload-run-id"))
+    status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        response.headers["x-request-id"] = request_id
+        return response
+    finally:
+        duration_ms = round((perf_counter() - started_at) * 1_000, 3)
+        template = path_template(request)
+        span = trace.get_current_span()
+        span_context = span.get_span_context()
+        trace_id = (
+            f"{span_context.trace_id:032x}" if span_context.is_valid else ""
+        )
+        attributes = {
+            "service": SERVICE_NAME,
+            "method": request.method,
+            "path_template": template,
+            "status_code": status_code,
+        }
+        span.set_attributes(
+            {
+                **attributes,
+                "request.id": request_id,
+                "user.id": DEMO_USER_ID,
+                **({"workload.run_id": run_id} if run_id is not None else {}),
+            }
+        )
+        observability.request_counter.add(1, attributes)
+        observability.request_duration.record(duration_ms, attributes)
+        if status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR:
+            observability.error_counter.add(1, attributes)
+
+        event = {
+            "_msg": "http_request_completed",
+            "event_type": "http_request_completed",
+            **attributes,
+            "duration_ms": duration_ms,
+            "trace_id": trace_id,
+            "request_id": request_id,
+            "user_id": DEMO_USER_ID,
+            "release": observability.release,
+            "environment": observability.environment,
+        }
+        if run_id is not None:
+            event["run_id"] = run_id
+        observability.logger.info(event)
+
+
+FastAPIInstrumentor.instrument_app(
+    app,
+    tracer_provider=observability.tracer_provider,
+    meter_provider=observability.meter_provider,
+    excluded_urls="/health",
+    exclude_spans=["receive", "send"],
+)
 
 
 def todo_from_row(row: sqlite3.Row) -> Todo:
@@ -37,7 +126,8 @@ def todo_from_row(row: sqlite3.Row) -> Todo:
 
 
 def require_todo(connection: sqlite3.Connection, todo_id: int) -> sqlite3.Row:
-    row = connection.execute(
+    row = execute(
+        connection,
         "SELECT id, title, completed FROM todos WHERE id = ?", (todo_id,)
     ).fetchone()
     if row is None:
@@ -52,7 +142,8 @@ def health() -> dict[str, str]:
 
 @app.get("/todos", response_model=list[Todo])
 def list_todos(connection: sqlite3.Connection = Depends(get_connection)) -> list[Todo]:
-    rows = connection.execute(
+    rows = execute(
+        connection,
         "SELECT id, title, completed FROM todos ORDER BY id"
     ).fetchall()
     return [todo_from_row(row) for row in rows]
@@ -62,7 +153,8 @@ def list_todos(connection: sqlite3.Connection = Depends(get_connection)) -> list
 def create_todo(
     request: TodoCreate, connection: sqlite3.Connection = Depends(get_connection)
 ) -> Todo:
-    cursor = connection.execute(
+    cursor = execute(
+        connection,
         "INSERT INTO todos (title) VALUES (?)",
         (request.title,),
     )
@@ -77,7 +169,8 @@ def update_todo(
     connection: sqlite3.Connection = Depends(get_connection),
 ) -> Todo:
     require_todo(connection, todo_id)
-    connection.execute(
+    execute(
+        connection,
         "UPDATE todos SET completed = ? WHERE id = ?",
         (request.completed, todo_id),
     )
@@ -90,6 +183,6 @@ def delete_todo(
     todo_id: int, connection: sqlite3.Connection = Depends(get_connection)
 ) -> Response:
     require_todo(connection, todo_id)
-    connection.execute("DELETE FROM todos WHERE id = ?", (todo_id,))
+    execute(connection, "DELETE FROM todos WHERE id = ?", (todo_id,))
     connection.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -1,9 +1,23 @@
 from collections.abc import Iterator
+import json
+import logging
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 import pytest
 
 from todo_api.main import app
+from todo_api.observability import LOGGER_NAME
+
+
+class EventHandler(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__()
+        self.events: list[dict[str, object]] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if isinstance(record.msg, dict):
+            self.events.append(record.msg)
 
 
 @pytest.fixture
@@ -11,6 +25,15 @@ def client(tmp_path, monkeypatch) -> Iterator[TestClient]:
     monkeypatch.setenv("TODO_DB_PATH", str(tmp_path / "todos.db"))
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture
+def request_log_events() -> Iterator[list[dict[str, object]]]:
+    handler = EventHandler()
+    logger = logging.getLogger(LOGGER_NAME)
+    logger.addHandler(handler)
+    yield handler.events
+    logger.removeHandler(handler)
 
 
 def test_todo_crud_journey(client: TestClient) -> None:
@@ -57,3 +80,58 @@ def test_todos_survive_app_restart(tmp_path, monkeypatch) -> None:
         assert restarted_client.get("/todos").json() == [
             {"id": 1, "title": "persist me", "completed": False}
         ]
+
+
+def test_request_log_contains_bounded_diagnostic_context(
+    client: TestClient, request_log_events: list[dict[str, object]]
+) -> None:
+    run_id = str(uuid4())
+    response = client.post(
+        "/todos",
+        json={"title": "password=keep-this-private"},
+        headers={
+            "authorization": "Bearer secret-token",
+            "cookie": "session=secret-cookie",
+            "x-workload-run-id": run_id,
+        },
+    )
+
+    assert response.status_code == 201
+    assert UUID(response.headers["x-request-id"])
+    event = request_log_events[-1]
+    assert event == {
+        "_msg": "http_request_completed",
+        "event_type": "http_request_completed",
+        "service": "todo-api",
+        "method": "POST",
+        "path_template": "/todos",
+        "status_code": 201,
+        "duration_ms": event["duration_ms"],
+        "trace_id": "",
+        "request_id": response.headers["x-request-id"],
+        "user_id": "demo-user",
+        "release": "local",
+        "environment": "local",
+        "run_id": run_id,
+    }
+    serialized_event = json.dumps(event)
+    assert "keep-this-private" not in serialized_event
+    assert "secret-token" not in serialized_event
+    assert "secret-cookie" not in serialized_event
+    assert "password" not in serialized_event
+
+
+def test_request_log_uses_path_template_and_filters_invalid_correlation_ids(
+    client: TestClient, request_log_events: list[dict[str, object]]
+) -> None:
+    response = client.delete(
+        "/todos/999",
+        headers={"x-request-id": "not-a-uuid", "x-workload-run-id": "not-a-uuid"},
+    )
+
+    assert response.status_code == 404
+    event = request_log_events[-1]
+    assert event["path_template"] == "/todos/{todo_id}"
+    assert event["request_id"] == response.headers["x-request-id"]
+    assert UUID(str(event["request_id"]))
+    assert "run_id" not in event
