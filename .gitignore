@@ -1,0 +1,14 @@
+.DS_Store
+.agents/
+.idea/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pytest_cache/
+.venv/
+__pycache__/
+*.pyc
+*.db
+app/build/
+app/macos/Flutter/ephemeral/
