@@ -22,8 +22,42 @@ feedback loop exercises real user behavior rather than direct API shortcuts.
 
 ## Status
 
-The repository currently contains the validated prototype scope and
-architecture decision. Implementation work is tracked as GitHub issues.
+The first Todo CRUD slice is implemented. It includes a Flutter macOS App,
+FastAPI service, SQLite storage, and Docker Compose volume for local
+persistence. Further observability work is tracked as GitHub issues.
 
 See [Prototype Scope](docs/PROTOTYPE-SCOPE.md) and
 [ADR 0001](docs/adr/0001-hybrid-observability-pipeline.md).
+
+## Run Locally
+
+Start the API container:
+
+```bash
+./scripts/start_local.sh
+```
+
+Start the macOS App in another terminal:
+
+```bash
+cd app
+flutter run -d macos
+```
+
+Stop the backend without deleting persisted SQLite data:
+
+```bash
+./scripts/stop_local.sh
+```
+
+## Test
+
+```bash
+cd services/todo_api
+uv run --group dev pytest
+
+cd ../../app
+flutter analyze
+flutter test
+flutter build macos --debug
+```

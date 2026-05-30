@@ -1,0 +1,22 @@
+services:
+  todo-api:
+    build:
+      context: ./services/todo_api
+    environment:
+      TODO_DB_PATH: /data/todos.db
+    ports:
+      - "8000:8000"
+    volumes:
+      - todo-data:/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+volumes:
+  todo-data:
