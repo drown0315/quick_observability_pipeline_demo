@@ -2,8 +2,14 @@ services:
   todo-api:
     build:
       context: ./services/todo_api
+    depends_on:
+      - otel-collector
     environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       TODO_DB_PATH: /data/todos.db
+      TODO_ENVIRONMENT: local
+      TODO_OTEL_ENABLED: "true"
+      TODO_RELEASE: local
     ports:
       - "8000:8000"
     volumes:
@@ -18,5 +24,43 @@ services:
       timeout: 2s
       retries: 15
 
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.153.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    depends_on:
+      - victoria-logs
+      - victoria-metrics
+      - victoria-traces
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ./observability/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+
+  victoria-logs:
+    image: victoriametrics/victoria-logs:v1.50.0
+    ports:
+      - "9428:9428"
+    volumes:
+      - victoria-logs-data:/victoria-logs-data
+
+  victoria-metrics:
+    image: victoriametrics/victoria-metrics:v1.144.0
+    command: ["-usePromCompatibleNaming"]
+    ports:
+      - "8428:8428"
+    volumes:
+      - victoria-metrics-data:/victoria-metrics-data
+
+  victoria-traces:
+    image: victoriametrics/victoria-traces:v0.9.0
+    ports:
+      - "10428:10428"
+    volumes:
+      - victoria-traces-data:/victoria-traces-data
+
 volumes:
   todo-data:
+  victoria-logs-data:
+  victoria-metrics-data:
+  victoria-traces-data:
