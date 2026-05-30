@@ -1,0 +1,34 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+  deltatocumulative: {}
+
+exporters:
+  otlp_http/victorialogs:
+    logs_endpoint: http://victoria-logs:9428/insert/opentelemetry/v1/logs
+  otlp_http/victoriatraces:
+    traces_endpoint: http://victoria-traces:10428/insert/opentelemetry/v1/traces
+  otlp_http/victoriametrics:
+    metrics_endpoint: http://victoria-metrics:8428/opentelemetry/v1/metrics
+
+service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_http/victorialogs]
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_http/victoriatraces]
+    metrics:
+      receivers: [otlp]
+      processors: [deltatocumulative, batch]
+      exporters: [otlp_http/victoriametrics]

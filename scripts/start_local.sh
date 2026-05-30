@@ -1,18 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-docker compose up -d --build todo-api
+docker compose up -d --build
 
-echo "Waiting for todo-api health check..."
-for _ in {1..30}; do
-  if curl --fail --silent http://localhost:8000/health >/dev/null; then
-    echo "todo-api is ready at http://localhost:8000"
-    echo "Start the Flutter app with: (cd app && flutter run -d macos)"
-    exit 0
-  fi
-  sleep 1
-done
+wait_for_service() {
+  local name="$1"
+  local url="$2"
 
-echo "todo-api did not become healthy within 30 seconds" >&2
-docker compose logs todo-api >&2
-exit 1
+  echo "Waiting for ${name}..."
+  for _ in {1..60}; do
+    if curl --fail --silent "$url" >/dev/null; then
+      echo "${name} is ready at ${url}"
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "${name} did not become ready within 60 seconds" >&2
+  docker compose logs "$name" >&2
+  return 1
+}
+
+wait_for_service victoria-logs http://localhost:9428/-/healthy
+wait_for_service victoria-metrics http://localhost:8428/-/healthy
+wait_for_service victoria-traces http://localhost:10428/-/healthy
+wait_for_service todo-api http://localhost:8000/health
+
+echo "Start the Flutter app with: (cd app && flutter run -d macos)"
