@@ -37,6 +37,30 @@ services:
     volumes:
       - ./observability/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
 
+  observability-gateway:
+    build:
+      context: ./services/observability_gateway
+    depends_on:
+      - victoria-logs
+      - victoria-metrics
+      - victoria-traces
+    environment:
+      DIAGNOSTICS_ENVIRONMENT: local
+      VICTORIA_LOGS_URL: http://victoria-logs:9428
+      VICTORIA_METRICS_URL: http://victoria-metrics:8428
+      VICTORIA_TRACES_URL: http://victoria-traces:10428
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
   victoria-logs:
     image: victoriametrics/victoria-logs:v1.50.0
     ports:

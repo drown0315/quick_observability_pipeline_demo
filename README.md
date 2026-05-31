@@ -50,10 +50,20 @@ Stop the backend without deleting persisted SQLite data:
 ./scripts/stop_local.sh
 ```
 
+Query bounded backend diagnostic evidence through the local Gateway:
+
+```bash
+./scripts/diagnostics issues --since 15m
+./scripts/diagnostics show backend:<uuid>
+```
+
 ## Test
 
 ```bash
 cd services/todo_api
+uv run --group dev pytest
+
+cd ../observability_gateway
 uv run --group dev pytest
 
 cd ../../app
