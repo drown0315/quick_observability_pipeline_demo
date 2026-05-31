@@ -172,9 +172,11 @@ def test_get_issue_reports_unknown_backend_issue() -> None:
         traces_url="http://victoria-traces:10428",
         metrics_url="http://victoria-metrics:8428",
         client=httpx.Client(
+            # A successful empty LogsQL response means the issue does not exist.
             transport=httpx.MockTransport(lambda _: httpx.Response(200, text=""))
         ),
     )
 
+    # pytest.raises uses a context manager to assert that this call raises the error.
     with pytest.raises(BackendIssueNotFoundError):
         diagnostics.get_issue(ISSUE_ID)
