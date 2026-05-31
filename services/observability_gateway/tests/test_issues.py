@@ -5,8 +5,10 @@ from fastapi.testclient import TestClient
 import pytest
 
 from observability_gateway.main import app, get_backend_diagnostics
+from observability_gateway.victoria import BackendIssueNotFoundError
 
 ISSUE_ID = "backend:00000000-0000-0000-0000-000000000123"
+UNKNOWN_ISSUE_ID = "backend:00000000-0000-0000-0000-000000000999"
 
 
 @pytest.fixture
@@ -46,6 +48,8 @@ class StubBackendDiagnostics:
 
     def get_issue(self, issue_id: str) -> dict[str, object]:
         self.show_calls.append(issue_id)
+        if issue_id == UNKNOWN_ISSUE_ID:
+            raise BackendIssueNotFoundError(issue_id)
         return {
             "summary": {
                 "issue_id": issue_id,
@@ -133,3 +137,20 @@ def test_show_backend_issue_rejects_invalid_issue_id(
 
     assert response.status_code == 422
     assert backend_diagnostics.show_calls == []
+
+
+def test_show_backend_issue_returns_not_found_for_unknown_issue(
+    client: TestClient, backend_diagnostics: StubBackendDiagnostics
+) -> None:
+    response = client.get(f"/diagnostics/issues/{UNKNOWN_ISSUE_ID}")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Backend issue not found"}
+    assert backend_diagnostics.show_calls == [UNKNOWN_ISSUE_ID]
+
+
+def test_health_check(client: TestClient) -> None:
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}

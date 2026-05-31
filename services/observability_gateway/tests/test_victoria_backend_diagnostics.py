@@ -1,8 +1,12 @@
 from urllib.parse import parse_qs
 
 import httpx
+import pytest
 
-from observability_gateway.victoria import VictoriaBackendDiagnostics
+from observability_gateway.victoria import (
+    BackendIssueNotFoundError,
+    VictoriaBackendDiagnostics,
+)
 
 ISSUE_ID = "backend:00000000-0000-0000-0000-000000000123"
 
@@ -146,9 +150,31 @@ def test_get_issue_returns_bounded_logs_trace_spans_and_fixed_metrics_window() -
         if request.url.path == "/api/v1/query_range"
     ]
     assert len(metric_requests) == 3
+    assert [request["query"] for request in metric_requests] == [
+        ["sum(rate(todo_api_http_server_requests[1m]))"],
+        ["sum(rate(todo_api_http_server_errors[1m]))"],
+        [
+            "sum(rate(todo_api_http_server_duration_sum[1m])) / "
+            "sum(rate(todo_api_http_server_duration_count[1m]))"
+        ],
+    ]
     assert all(
         request["start"] == ["2026-05-31T08:25:00Z"]
         and request["end"] == ["2026-05-31T08:35:00Z"]
         and request["step"] == ["60"]
         for request in metric_requests
     )
+
+
+def test_get_issue_reports_unknown_backend_issue() -> None:
+    diagnostics = VictoriaBackendDiagnostics(
+        logs_url="http://victoria-logs:9428",
+        traces_url="http://victoria-traces:10428",
+        metrics_url="http://victoria-metrics:8428",
+        client=httpx.Client(
+            transport=httpx.MockTransport(lambda _: httpx.Response(200, text=""))
+        ),
+    )
+
+    with pytest.raises(BackendIssueNotFoundError):
+        diagnostics.get_issue(ISSUE_ID)

@@ -19,6 +19,10 @@ METRIC_QUERIES = {
 }
 
 
+class BackendIssueNotFoundError(Exception):
+    pass
+
+
 def environment_value(name: str, default: str) -> str:
     value = os.environ.get(name, default).strip()
     return value or default
@@ -53,6 +57,9 @@ class VictoriaBackendDiagnostics:
             raise ValueError("diagnostics environment contains unsupported characters")
         self._client = client or httpx.Client(timeout=10)
 
+    def close(self) -> None:
+        self._client.close()
+
     def list_issues(
         self, *, since: str, limit: int, run_id: str | None
     ) -> list[dict[str, object]]:
@@ -83,7 +90,7 @@ class VictoriaBackendDiagnostics:
             limit=1,
         )
         if not issue_logs:
-            raise ValueError(f"unknown backend issue: {issue_id}")
+            raise BackendIssueNotFoundError(issue_id)
 
         issue_log = issue_logs[0]
         trace_id = str(issue_log["trace_id"])

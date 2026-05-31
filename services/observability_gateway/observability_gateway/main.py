@@ -1,10 +1,15 @@
+from collections.abc import Iterator
 from typing import Annotated, Protocol
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, Path, Query
+from fastapi import Depends, FastAPI, Path, Query, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from observability_gateway.victoria import VictoriaBackendDiagnostics
+from observability_gateway.victoria import (
+    BackendIssueNotFoundError,
+    VictoriaBackendDiagnostics,
+)
 
 
 class BackendIssueSummary(BaseModel):
@@ -41,11 +46,30 @@ class BackendDiagnostics(Protocol):
     def get_issue(self, issue_id: str) -> dict[str, object]: ...
 
 
-def get_backend_diagnostics() -> BackendDiagnostics:
-    return VictoriaBackendDiagnostics()
+def get_backend_diagnostics() -> Iterator[BackendDiagnostics]:
+    diagnostics = VictoriaBackendDiagnostics()
+    try:
+        yield diagnostics
+    finally:
+        diagnostics.close()
 
 
 app = FastAPI(title="Observability Gateway")
+
+
+@app.exception_handler(BackendIssueNotFoundError)
+async def backend_issue_not_found(
+    _: Request, __: BackendIssueNotFoundError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=404,
+        content={"detail": "Backend issue not found"},
+    )
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
 
 
 @app.get("/diagnostics/issues", response_model=list[BackendIssueSummary])
