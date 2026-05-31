@@ -18,6 +18,8 @@ def backend_diagnostics() -> "StubBackendDiagnostics":
 
 @pytest.fixture
 def client(backend_diagnostics: "StubBackendDiagnostics") -> Iterator[TestClient]:
+    """Inject the stub diagnostics adapter while one Gateway client is active."""
+
     app.dependency_overrides[get_backend_diagnostics] = lambda: backend_diagnostics
     with TestClient(app) as test_client:
         yield test_client
@@ -25,6 +27,8 @@ def client(backend_diagnostics: "StubBackendDiagnostics") -> Iterator[TestClient
 
 
 class StubBackendDiagnostics:
+    """Record route calls and return deterministic backend diagnostic records."""
+
     def __init__(self) -> None:
         self.list_calls: list[dict[str, object]] = []
         self.show_calls: list[str] = []

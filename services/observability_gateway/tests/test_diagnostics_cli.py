@@ -15,9 +15,18 @@ DIAGNOSTICS_SCRIPT = REPOSITORY_ROOT / "scripts" / "diagnostics"
 
 @pytest.fixture
 def gateway_server() -> tuple[str, list[str]]:
+    """Start a local HTTP server that records requests made by the real CLI.
+
+    Yields:
+        A tuple containing the temporary Gateway URL and a mutable list of
+        request paths received by the server.
+    """
+
     requests: list[str] = []
 
     class GatewayHandler(BaseHTTPRequestHandler):
+        """Return deterministic issue list and issue detail JSON responses."""
+
         def do_GET(self) -> None:
             requests.append(self.path)
             summary = {
@@ -52,6 +61,8 @@ def gateway_server() -> tuple[str, list[str]]:
             self.wfile.write(body)
 
         def log_message(self, format: str, *args: object) -> None:
+            """Disable HTTP server log output during CLI tests."""
+
             pass
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), GatewayHandler)

@@ -10,10 +10,25 @@ from urllib.request import urlopen
 
 
 def gateway_url() -> str:
+    """Return the local Gateway base URL without a trailing slash."""
+
     return os.environ.get("DIAGNOSTICS_GATEWAY_URL", "http://localhost:8001").rstrip("/")
 
 
 def request_json(path: str) -> Any:
+    """Request one Gateway path and decode its JSON response.
+
+    Args:
+        path: Absolute Gateway path, including any encoded query string.
+
+    Returns:
+        JSON value returned by the Gateway.
+
+    Raises:
+        RuntimeError: The Gateway returns a non-success HTTP status or cannot
+            be reached within ten seconds.
+    """
+
     try:
         with urlopen(f"{gateway_url()}{path}", timeout=10) as response:
             return json.load(response)
@@ -24,6 +39,15 @@ def request_json(path: str) -> Any:
 
 
 def format_issues(issues: list[dict[str, object]]) -> str:
+    """Render issue summaries as one readable line per backend failure.
+
+    Args:
+        issues: Lightweight issue records returned by `/diagnostics/issues`.
+
+    Returns:
+        One line per issue, or `No backend issues.` when the list is empty.
+    """
+
     if not issues:
         return "No backend issues."
     return "\n".join(
@@ -36,6 +60,16 @@ def format_issues(issues: list[dict[str, object]]) -> str:
 
 
 def format_issue(issue: dict[str, object]) -> str:
+    """Render one issue detail response as a readable diagnostic summary.
+
+    Args:
+        issue: Nested response returned by `/diagnostics/issues/{issue_id}`.
+
+    Returns:
+        A terminal-oriented summary containing issue identity, stacktrace, and
+        counts for the bounded logs and spans.
+    """
+
     summary = issue["summary"]
     return "\n".join(
         [
@@ -54,6 +88,14 @@ def format_issue(issue: dict[str, object]) -> str:
 
 
 def print_output(value: Any, output_format: str) -> None:
+    """Print a Gateway response as JSON or human-readable text.
+
+    Args:
+        value: Issue summary list or one issue detail record.
+        output_format: `json` for the complete machine-readable response or
+            `text` for a compact terminal view.
+    """
+
     if output_format == "json":
         json.dump(value, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
@@ -64,6 +106,8 @@ def print_output(value: Any, output_format: str) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the `issues` and `show` command-line argument parser."""
+
     parser = argparse.ArgumentParser(description="Query bounded local diagnostics")
     commands = parser.add_subparsers(dest="command", required=True)
 
@@ -80,6 +124,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    """Run one diagnostics CLI command and return its process exit code.
+
+    Returns:
+        `0` after printing a Gateway response, or `1` after printing a Gateway
+        request error to stderr.
+    """
+
     args = build_parser().parse_args()
     try:
         if args.command == "issues":
