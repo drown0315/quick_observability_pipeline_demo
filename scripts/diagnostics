@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+import argparse
+import json
+import os
+import sys
+from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote, urlencode
+from urllib.request import urlopen
+
+
+def gateway_url() -> str:
+    """Return the local Gateway base URL without a trailing slash."""
+
+    return os.environ.get("DIAGNOSTICS_GATEWAY_URL", "http://localhost:8001").rstrip("/")
+
+
+def request_json(path: str) -> Any:
+    """Request one Gateway path and decode its JSON response.
+
+    Args:
+        path: Absolute Gateway path, including any encoded query string.
+
+    Returns:
+        JSON value returned by the Gateway.
+
+    Raises:
+        RuntimeError: The Gateway returns a non-success HTTP status or cannot
+            be reached within ten seconds.
+    """
+
+    try:
+        with urlopen(f"{gateway_url()}{path}", timeout=10) as response:
+            return json.load(response)
+    except HTTPError as error:
+        raise RuntimeError(f"Gateway returned HTTP {error.code}") from error
+    except URLError as error:
+        raise RuntimeError(f"Gateway request failed: {error.reason}") from error
+
+
+def format_issues(issues: list[dict[str, object]]) -> str:
+    """Render issue summaries as one readable line per backend failure.
+
+    Args:
+        issues: Lightweight issue records returned by `/diagnostics/issues`.
+
+    Returns:
+        One line per issue, or `No backend issues.` when the list is empty.
+    """
+
+    if not issues:
+        return "No backend issues."
+    return "\n".join(
+        (
+            f"{issue['issue_id']} {issue['timestamp']} "
+            f"{issue['exception_type']}: {issue['message']}"
+        )
+        for issue in issues
+    )
+
+
+def format_issue(issue: dict[str, object]) -> str:
+    """Render one issue detail response as a readable diagnostic summary.
+
+    Args:
+        issue: Nested response returned by `/diagnostics/issues/{issue_id}`.
+
+    Returns:
+        A terminal-oriented summary containing issue identity, stacktrace, and
+        counts for the bounded logs and spans.
+    """
+
+    summary = issue["summary"]
+    return "\n".join(
+        [
+            f"Issue: {summary['issue_id']}",
+            f"Time: {summary['timestamp']}",
+            f"Exception: {summary['exception_type']}: {summary['message']}",
+            "",
+            "Stacktrace:",
+            str(issue["stacktrace"]),
+            "",
+            f"Logs: {len(issue['logs'])}",
+            f"Spans: {len(issue['spans'])}",
+            f"Metrics window: {issue['metrics']['start']} to {issue['metrics']['end']}",
+        ]
+    )
+
+
+def print_output(value: Any, output_format: str) -> None:
+    """Print a Gateway response as JSON or human-readable text.
+
+    Args:
+        value: Issue summary list or one issue detail record.
+        output_format: `json` for the complete machine-readable response or
+            `text` for a compact terminal view.
+    """
+
+    if output_format == "json":
+        json.dump(value, sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
+    elif isinstance(value, list):
+        print(format_issues(value))
+    else:
+        print(format_issue(value))
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the `issues` and `show` command-line argument parser."""
+
+    parser = argparse.ArgumentParser(description="Query bounded local diagnostics")
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    issues = commands.add_parser("issues", help="List recent backend issues")
+    issues.add_argument("--since", default="15m")
+    issues.add_argument("--limit", default=20, type=int)
+    issues.add_argument("--run-id")
+    issues.add_argument("--format", choices=["json", "text"], default="json")
+
+    show = commands.add_parser("show", help="Expand one backend issue")
+    show.add_argument("issue_id")
+    show.add_argument("--format", choices=["json", "text"], default="json")
+    return parser
+
+
+def main() -> int:
+    """Run one diagnostics CLI command and return its process exit code.
+
+    Returns:
+        `0` after printing a Gateway response, or `1` after printing a Gateway
+        request error to stderr.
+    """
+
+    args = build_parser().parse_args()
+    try:
+        if args.command == "issues":
+            parameters = {"since": args.since, "limit": args.limit}
+            if args.run_id is not None:
+                parameters["run_id"] = args.run_id
+            value = request_json(f"/diagnostics/issues?{urlencode(parameters)}")
+        else:
+            value = request_json(f"/diagnostics/issues/{quote(args.issue_id, safe=':')}")
+        print_output(value, args.format)
+        return 0
+    except RuntimeError as error:
+        print(error, file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

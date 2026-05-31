@@ -1,15 +1,21 @@
 from contextlib import asynccontextmanager
-import sqlite3
 from time import perf_counter
 from uuid import UUID, uuid4
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi import Depends, FastAPI, Request, Response, status
+from fastapi.responses import JSONResponse
 from opentelemetry import trace
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
-from todo_api.database import execute, get_connection, initialize_database
+from todo_api.database import initialize_database
 from todo_api.observability import SERVICE_NAME, observability
+from todo_api.todo_persistence import (
+    Todo,
+    TodoNotFoundError,
+    TodoPersistence,
+    get_todo_persistence,
+)
 
 DEMO_USER_ID = "demo-user"
 
@@ -19,14 +25,6 @@ class TodoCreate(BaseModel):
 
 
 class TodoUpdate(BaseModel):
-    completed: bool
-
-
-class Todo(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    title: str
     completed: bool
 
 
@@ -121,6 +119,13 @@ FastAPIInstrumentor.instrument_app(
 )
 
 
+@app.exception_handler(TodoNotFoundError)
+async def todo_not_found(_: Request, __: TodoNotFoundError) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={"detail": "Todo not found"},
+    )
+
 def todo_from_row(row: sqlite3.Row) -> Todo:
     return Todo(id=row["id"], title=row["title"], completed=bool(row["completed"]))
 
@@ -134,55 +139,38 @@ def require_todo(connection: sqlite3.Connection, todo_id: int) -> sqlite3.Row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Todo not found")
     return row
 
-
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
 @app.get("/todos", response_model=list[Todo])
-def list_todos(connection: sqlite3.Connection = Depends(get_connection)) -> list[Todo]:
-    rows = execute(
-        connection,
-        "SELECT id, title, completed FROM todos ORDER BY id"
-    ).fetchall()
-    return [todo_from_row(row) for row in rows]
+def list_todos(persistence: TodoPersistence = Depends(get_todo_persistence)) -> list[Todo]:
+    return persistence.list()
+
 
 
 @app.post("/todos", response_model=Todo, status_code=status.HTTP_201_CREATED)
 def create_todo(
-    request: TodoCreate, connection: sqlite3.Connection = Depends(get_connection)
+    request: TodoCreate,
+    persistence: TodoPersistence = Depends(get_todo_persistence),
 ) -> Todo:
-    cursor = execute(
-        connection,
-        "INSERT INTO todos (title) VALUES (?)",
-        (request.title,),
-    )
-    connection.commit()
-    return todo_from_row(require_todo(connection, cursor.lastrowid))
+    return persistence.create(request.title)
 
 
 @app.patch("/todos/{todo_id}", response_model=Todo)
 def update_todo(
     todo_id: int,
     request: TodoUpdate,
-    connection: sqlite3.Connection = Depends(get_connection),
+    persistence: TodoPersistence = Depends(get_todo_persistence),
 ) -> Todo:
-    require_todo(connection, todo_id)
-    execute(
-        connection,
-        "UPDATE todos SET completed = ? WHERE id = ?",
-        (request.completed, todo_id),
-    )
-    connection.commit()
-    return todo_from_row(require_todo(connection, todo_id))
+    return persistence.update(todo_id, completed=request.completed)
 
 
 @app.delete("/todos/{todo_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_todo(
-    todo_id: int, connection: sqlite3.Connection = Depends(get_connection)
+    todo_id: int,
+    persistence: TodoPersistence = Depends(get_todo_persistence),
 ) -> Response:
-    require_todo(connection, todo_id)
-    execute(connection, "DELETE FROM todos WHERE id = ?", (todo_id,))
-    connection.commit()
+    persistence.delete(todo_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

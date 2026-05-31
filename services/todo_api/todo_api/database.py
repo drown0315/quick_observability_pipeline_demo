@@ -1,8 +1,11 @@
 import os
 import sqlite3
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
+
+from opentelemetry.instrumentation.sqlite3 import SQLite3Instrumentor
+
+from todo_api.observability import observability
 
 from opentelemetry.instrumentation.sqlite3 import SQLite3Instrumentor
 
@@ -43,8 +46,3 @@ def initialize_database() -> None:
             )
             """
         )
-
-
-def get_connection() -> Iterator[sqlite3.Connection]:
-    with connect() as connection:
-        yield connection

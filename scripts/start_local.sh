@@ -25,5 +25,6 @@ wait_for_service victoria-logs http://localhost:9428/-/healthy
 wait_for_service victoria-metrics http://localhost:8428/-/healthy
 wait_for_service victoria-traces http://localhost:10428/-/healthy
 wait_for_service todo-api http://localhost:8000/health
+wait_for_service observability-gateway http://localhost:8001/health
 
 echo "Start the Flutter app with: (cd app && flutter run -d macos)"
