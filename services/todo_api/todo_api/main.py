@@ -126,6 +126,18 @@ async def todo_not_found(_: Request, __: TodoNotFoundError) -> JSONResponse:
         content={"detail": "Todo not found"},
     )
 
+def todo_from_row(row: sqlite3.Row) -> Todo:
+    return Todo(id=row["id"], title=row["title"], completed=bool(row["completed"]))
+
+
+def require_todo(connection: sqlite3.Connection, todo_id: int) -> sqlite3.Row:
+    row = execute(
+        connection,
+        "SELECT id, title, completed FROM todos WHERE id = ?", (todo_id,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Todo not found")
+    return row
 
 @app.get("/health")
 def health() -> dict[str, str]:
@@ -135,6 +147,7 @@ def health() -> dict[str, str]:
 @app.get("/todos", response_model=list[Todo])
 def list_todos(persistence: TodoPersistence = Depends(get_todo_persistence)) -> list[Todo]:
     return persistence.list()
+
 
 
 @app.post("/todos", response_model=Todo, status_code=status.HTTP_201_CREATED)
