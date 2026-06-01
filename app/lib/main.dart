@@ -75,8 +75,8 @@ class HttpTodoRepository implements TodoRepository {
       'TODO_API_BASE_URL',
       defaultValue: 'http://localhost:8000',
     ),
-  })  : _client = client ?? http.Client(),
-        _workloadRunIdStore = workloadRunIdStore ?? workload.workloadRunIdStore;
+  }) : _client = client ?? http.Client(),
+       _workloadRunIdStore = workloadRunIdStore ?? workload.workloadRunIdStore;
 
   final http.Client _client;
   final workload.WorkloadRunIdStore _workloadRunIdStore;
@@ -125,6 +125,22 @@ class HttpTodoRepository implements TodoRepository {
     _requireSuccess(response);
   }
 
+  /// Build headers for one Todo API request.
+  ///
+  /// Args:
+  ///   includeJsonContentType: Whether to include `content-type:
+  ///       application/json` for requests with a JSON body. Requests without a
+  ///       body leave the content type unset.
+  ///
+  /// Returns:
+  ///   Request headers containing the current `x-workload-run-id` when a valid
+  ///   workload run ID has been stored. Before a run ID is set, the workload
+  ///   header is omitted.
+  ///
+  /// Example:
+  ///   With current run ID `00000000-0000-0000-0000-000000000123` and
+  ///   `includeJsonContentType: true`, the returned headers include both
+  ///   `content-type` and `x-workload-run-id`.
   Map<String, String> _headers({bool includeJsonContentType = false}) {
     final runId = _workloadRunIdStore.current;
     final headers = {
@@ -301,7 +317,7 @@ class _TodoPageState extends State<TodoPage> {
                         onChanged: _loading
                             ? null
                             : (completed) =>
-                                _setCompleted(todo, completed ?? false),
+                                  _setCompleted(todo, completed ?? false),
                       ),
                       title: Text(
                         todo.title,
@@ -319,8 +335,9 @@ class _TodoPageState extends State<TodoPage> {
                         child: ExcludeSemantics(
                           child: IconButton(
                             tooltip: 'Delete ${todo.title}',
-                            onPressed:
-                                _loading ? null : () => _deleteTodo(todo),
+                            onPressed: _loading
+                                ? null
+                                : () => _deleteTodo(todo),
                             icon: const Icon(Icons.delete),
                           ),
                         ),
