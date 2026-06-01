@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  python:
+    name: Python checks (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - services/todo_api
+          - services/observability_gateway
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Analyze code warnings
+        uses: astral-sh/ruff-action@v4.0.0
+        with:
+          src: ${{ matrix.service }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8
+        with:
+          enable-cache: true
+          cache-dependency-glob: ${{ matrix.service }}/uv.lock
+
+      - name: Install dependencies
+        run: uv sync --project "${{ matrix.service }}" --group dev --locked
+
+      - name: Run unit tests
+        run: uv run --project "${{ matrix.service }}" pytest
+
+  flutter:
+    name: Flutter checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze code warnings
+        run: flutter analyze
+
+      - name: Run unit tests
+        run: flutter test
