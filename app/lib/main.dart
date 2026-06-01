@@ -29,17 +29,17 @@ Future<void> main() async {
       options.enableLogs = false;
     },
     appRunner: () async {
-      await MCPToolkitBinding.instance.bootstrapFlutter(
-        additionalEntries:
-            kDebugMode ? todoMcpEntries() : const <MCPCallEntry>{},
-        runApp: () async {
-          await Sentry.configureScope((scope) async {
-            await scope.setUser(SentryUser(id: 'demo-user'));
-            await scope.setTag('session_id', sessionId);
-          });
-          runApp(const TodoApp());
-        },
-      );
+      if (kDebugMode) {
+        MCPToolkitBinding.instance
+          ..initialize()
+          ..initializeFlutterToolkit();
+        await MCPToolkitBinding.instance.addEntries(entries: todoMcpEntries());
+      }
+      await Sentry.configureScope((scope) async {
+        await scope.setUser(SentryUser(id: 'demo-user'));
+        await scope.setTag('session_id', sessionId);
+      });
+      runApp(const TodoApp());
     },
   );
 }
@@ -296,6 +296,7 @@ class _TodoPageState extends State<TodoPage> {
                     ListTile(
                       key: Key('todo-${todo.id}'),
                       leading: Checkbox(
+                        semanticLabel: 'Complete ${todo.title}',
                         value: todo.completed,
                         onChanged: _loading
                             ? null
@@ -310,10 +311,19 @@ class _TodoPageState extends State<TodoPage> {
                               : null,
                         ),
                       ),
-                      trailing: IconButton(
-                        tooltip: 'Delete ${todo.title}',
-                        onPressed: _loading ? null : () => _deleteTodo(todo),
-                        icon: const Icon(Icons.delete),
+                      trailing: Semantics(
+                        label: 'Delete ${todo.title}',
+                        button: true,
+                        container: true,
+                        onTap: _loading ? null : () => _deleteTodo(todo),
+                        child: ExcludeSemantics(
+                          child: IconButton(
+                            tooltip: 'Delete ${todo.title}',
+                            onPressed:
+                                _loading ? null : () => _deleteTodo(todo),
+                            icon: const Icon(Icons.delete),
+                          ),
+                        ),
                       ),
                     ),
                 ],

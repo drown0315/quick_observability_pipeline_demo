@@ -13,6 +13,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('buy milk'), findsOneWidget);
+    expect(find.bySemanticsLabel('Complete buy milk'), findsOneWidget);
+    expect(find.bySemanticsLabel('Delete buy milk'), findsOneWidget);
 
     await tester.tap(find.byType(Checkbox));
     await tester.pumpAndSettle();
