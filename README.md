@@ -13,6 +13,7 @@ Flutter macOS App -> FastAPI + SQLite
 FastAPI -> OpenTelemetry Collector
         -> VictoriaLogs / VictoriaTraces / VictoriaMetrics
 Codex -> diagnostics CLI -> Observability Gateway -> Sentry and Victoria APIs
+Repair Coordinator -> Observability Gateway -> Codex -> validated pull request
 ```
 
 The first version is intentionally local-first. It validates two escaped-bug
@@ -53,6 +54,15 @@ Start the macOS App in another terminal:
 ./scripts/run_flutter.sh
 ```
 
+Start the local Repair Coordinator in another terminal. It polls the Gateway,
+runs one repair task at a time in an isolated worktree, strictly replays the
+reviewed mixed UI workload, relaunches repaired Flutter code from that
+worktree, and creates a pull request after validation passes:
+
+```bash
+./scripts/run_repair_coordinator.sh
+```
+
 Stop the backend without deleting persisted SQLite data:
 
 ```bash
@@ -75,6 +85,9 @@ cd services/todo_api
 uv run --group dev pytest
 
 cd ../observability_gateway
+uv run --group dev pytest
+
+cd ../repair_coordinator
 uv run --group dev pytest
 
 cd ../../app

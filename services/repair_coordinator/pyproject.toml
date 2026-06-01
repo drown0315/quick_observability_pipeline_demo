@@ -1,0 +1,17 @@
+[project]
+name = "repair-coordinator"
+version = "0.1.0"
+description = "Local repair-task coordinator for the observability pipeline demo"
+requires-python = ">=3.12"
+dependencies = [
+    "pyyaml>=6,<7",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8,<9",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

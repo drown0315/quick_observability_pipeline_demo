@@ -11,6 +11,7 @@
 .flutter-plugins-dependencies
 .packages
 .pytest_cache/
+.repair_coordinator/
 .venv/
 __pycache__/
 *.pyc
