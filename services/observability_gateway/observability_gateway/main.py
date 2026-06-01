@@ -56,16 +56,28 @@ class MetricsWindow(BaseModel):
 
 
 class TraceCorrelation(BaseModel):
-    """Trace identity exposed by one source-specific diagnostic response.
+    """
+    Trace identity exposed by a diagnostic response from one system.
 
-    It contains:
-    - the trace ID read from a source-specific event, when available
-    - the source that supplied the trace ID
+    Attributes:
+        trace_id: The trace ID observed from this source, if available.
+        source: A string label indicating where this trace ID came from.
+            For example:
+            - "sentry_trace_context" -> trace ID from a Sentry event
+            - "backend_trace_context" -> trace ID from the current OpenTelemetry span on the backend
+            - "traceparent_header" -> trace ID extracted from an HTTP request header
 
-    Example:
-        A Sentry event with trace context returns its trace ID with source
-        `sentry_trace_context`; a backend issue returns the trace ID logged
-        from the current OpenTelemetry span with source `backend_trace_context`.
+    Example usage:
+        # Sentry event
+        TraceCorrelation(trace_id="7c5e5b8f", source="sentry_trace_context")
+
+        # Backend span
+        TraceCorrelation(trace_id="7c5e5b8f", source="backend_trace_context")
+
+    Purpose:
+        By collecting trace IDs from multiple sources with a source label, 
+        we can validate whether client and backend traces can be correlated.
+
     """
 
     trace_id: str | None = None
