@@ -3,7 +3,9 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:mcp_toolkit/mcp_toolkit.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:todo_app/todo_mcp_tools.dart';
 import 'package:todo_app/workload_run_id.dart' as workload;
 
 const _appEnvironment = String.fromEnvironment(
@@ -27,11 +29,17 @@ Future<void> main() async {
       options.enableLogs = false;
     },
     appRunner: () async {
-      await Sentry.configureScope((scope) async {
-        await scope.setUser(SentryUser(id: 'demo-user'));
-        await scope.setTag('session_id', sessionId);
-      });
-      runApp(const TodoApp());
+      await MCPToolkitBinding.instance.bootstrapFlutter(
+        additionalEntries:
+            kDebugMode ? todoMcpEntries() : const <MCPCallEntry>{},
+        runApp: () async {
+          await Sentry.configureScope((scope) async {
+            await scope.setUser(SentryUser(id: 'demo-user'));
+            await scope.setTag('session_id', sessionId);
+          });
+          runApp(const TodoApp());
+        },
+      );
     },
   );
 }
@@ -119,10 +127,13 @@ class HttpTodoRepository implements TodoRepository {
 
   Map<String, String> _headers({bool includeJsonContentType = false}) {
     final runId = _workloadRunIdStore.current;
-    return {
+    final headers = {
       if (includeJsonContentType) 'content-type': 'application/json',
-      if (runId != null) 'x-workload-run-id': runId,
     };
+    if (runId != null) {
+      headers['x-workload-run-id'] = runId;
+    }
+    return headers;
   }
 
   void _requireSuccess(http.Response response) {
