@@ -46,6 +46,9 @@ services:
       - victoria-traces
     environment:
       DIAGNOSTICS_ENVIRONMENT: local
+      SENTRY_AUTH_TOKEN: ${SENTRY_AUTH_TOKEN:?Set SENTRY_AUTH_TOKEN in .env}
+      SENTRY_ORG: ${SENTRY_ORG:?Set SENTRY_ORG in .env}
+      SENTRY_PROJECT: ${SENTRY_PROJECT:-todo-flutter-macos}
       VICTORIA_LOGS_URL: http://victoria-logs:9428
       VICTORIA_METRICS_URL: http://victoria-metrics:8428
       VICTORIA_TRACES_URL: http://victoria-traces:10428

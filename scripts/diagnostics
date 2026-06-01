@@ -39,17 +39,17 @@ def request_json(path: str) -> Any:
 
 
 def format_issues(issues: list[dict[str, object]]) -> str:
-    """Render issue summaries as one readable line per backend failure.
+    """Render issue summaries as one readable line per failure.
 
     Args:
         issues: Lightweight issue records returned by `/diagnostics/issues`.
 
     Returns:
-        One line per issue, or `No backend issues.` when the list is empty.
+        One line per issue, or `No issues.` when the list is empty.
     """
 
     if not issues:
-        return "No backend issues."
+        return "No issues."
     return "\n".join(
         (
             f"{issue['issue_id']} {issue['timestamp']} "
@@ -66,11 +66,27 @@ def format_issue(issue: dict[str, object]) -> str:
         issue: Nested response returned by `/diagnostics/issues/{issue_id}`.
 
     Returns:
-        A terminal-oriented summary containing issue identity, stacktrace, and
-        counts for the bounded logs and spans.
+        A terminal-oriented summary containing issue identity and the
+        source-specific bounded evidence counts.
     """
 
     summary = issue["summary"]
+    if "breadcrumbs" in issue:
+        context = issue["context"]
+        return "\n".join(
+            [
+                f"Issue: {summary['issue_id']}",
+                f"Time: {summary['timestamp']}",
+                f"Exception: {summary['exception_type']}: {summary['message']}",
+                "",
+                f"Stacktrace frames: {len(issue['stacktrace'])}",
+                f"Breadcrumbs: {len(issue['breadcrumbs'])}",
+                f"Release: {context['release']}",
+                f"Environment: {context['environment']}",
+                f"User: {context['user_id']}",
+                f"Session: {context['session_id']}",
+            ]
+        )
     return "\n".join(
         [
             f"Issue: {summary['issue_id']}",
@@ -111,13 +127,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Query bounded local diagnostics")
     commands = parser.add_subparsers(dest="command", required=True)
 
-    issues = commands.add_parser("issues", help="List recent backend issues")
+    issues = commands.add_parser("issues", help="List recent issues")
     issues.add_argument("--since", default="15m")
     issues.add_argument("--limit", default=20, type=int)
     issues.add_argument("--run-id")
     issues.add_argument("--format", choices=["json", "text"], default="json")
 
-    show = commands.add_parser("show", help="Expand one backend issue")
+    show = commands.add_parser("show", help="Expand one issue")
     show.add_argument("issue_id")
     show.add_argument("--format", choices=["json", "text"], default="json")
     return parser

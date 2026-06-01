@@ -6,6 +6,10 @@ from fastapi import Depends, FastAPI, Path, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from observability_gateway.sentry import (
+    ClientIssueNotFoundError,
+    SentryClientDiagnostics,
+)
 from observability_gateway.victoria import (
     BackendIssueNotFoundError,
     VictoriaBackendDiagnostics,
@@ -74,6 +78,38 @@ class BackendIssueDetail(BaseModel):
     metrics: MetricsWindow
 
 
+class ClientIssueSummary(BaseModel):
+    """Small Flutter client issue record returned by the issue list endpoint.
+
+    It identifies one Sentry issue group without including its stacktrace or
+    breadcrumbs.
+    """
+
+    issue_id: str
+    timestamp: str
+    service: str
+    exception_type: str
+    message: str
+
+
+class ClientContext(BaseModel):
+    """Flutter client context attached to one Sentry exception event."""
+
+    release: str | None = None
+    environment: str | None = None
+    user_id: str | None = None
+    session_id: str | None = None
+
+
+class ClientIssueDetail(BaseModel):
+    """Complete bounded diagnostic response for one Flutter client issue."""
+
+    summary: ClientIssueSummary
+    stacktrace: list[dict[str, object]]
+    breadcrumbs: list[dict[str, object]]
+    context: ClientContext
+
+
 class BackendDiagnostics(Protocol):
     """Read-only interface for querying normalized backend diagnostics.
 
@@ -84,6 +120,16 @@ class BackendDiagnostics(Protocol):
         `VictoriaBackendDiagnostics` implements this interface by querying
         VictoriaLogs, VictoriaTraces, and VictoriaMetrics.
     """
+
+    def list_issues(
+        self, *, since: str, limit: int, run_id: str | None
+    ) -> list[dict[str, object]]: ...
+
+    def get_issue(self, issue_id: str) -> dict[str, object]: ...
+
+
+class ClientDiagnostics(Protocol):
+    """Read-only interface for querying normalized Flutter client diagnostics."""
 
     def list_issues(
         self, *, since: str, limit: int, run_id: str | None
@@ -115,6 +161,16 @@ def get_backend_diagnostics() -> Iterator[BackendDiagnostics]:
         diagnostics.close()
 
 
+def get_client_diagnostics() -> Iterator[ClientDiagnostics]:
+    """Provide one Sentry diagnostics adapter for the lifetime of a request."""
+
+    diagnostics = SentryClientDiagnostics()
+    try:
+        yield diagnostics
+    finally:
+        diagnostics.close()
+
+
 app = FastAPI(title="Observability Gateway")
 
 
@@ -128,19 +184,33 @@ async def backend_issue_not_found(
     )
 
 
+@app.exception_handler(ClientIssueNotFoundError)
+async def client_issue_not_found(
+    _: Request, __: ClientIssueNotFoundError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=404,
+        content={"detail": "Client issue not found"},
+    )
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/diagnostics/issues", response_model=list[BackendIssueSummary])
+@app.get(
+    "/diagnostics/issues",
+    response_model=list[BackendIssueSummary | ClientIssueSummary],
+)
 def list_issues(
     since: Annotated[str, Query(pattern=r"^\d+[smhd]$")] = "15m",
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     run_id: UUID | None = None,
-    diagnostics: BackendDiagnostics = Depends(get_backend_diagnostics),
+    backend_diagnostics: BackendDiagnostics = Depends(get_backend_diagnostics),
+    client_diagnostics: ClientDiagnostics = Depends(get_client_diagnostics),
 ) -> list[dict[str, object]]:
-    """Return recent backend issue summaries that match the supplied filters.
+    """Return recent backend and Flutter client issues matching the filters.
 
     Args:
         since: Relative lookback duration such as `15m`. The HTTP layer accepts
@@ -149,45 +219,68 @@ def list_issues(
             1 through 100.
         run_id: Optional workload UUID. When omitted, issues from all workload
             runs in the configured diagnostics environment are eligible.
-        diagnostics: Read-only adapter used to query backend diagnostics.
+        backend_diagnostics: Read-only adapter used to query backend issues.
+        client_diagnostics: Read-only adapter used to query Flutter issues.
 
     Returns:
-        Lightweight issue records without stacktraces or related telemetry.
+        Lightweight issue records without stacktraces or related evidence,
+        ordered by most recent timestamp and bounded by `limit`.
 
     Example:
         `/diagnostics/issues?since=30m&limit=5` returns at most five backend
-        issue summaries observed during the last 30 minutes.
+        and Flutter issue summaries observed during the last 30 minutes.
     """
 
-    return diagnostics.list_issues(
+    run_id_value = str(run_id) if run_id is not None else None
+    issues = backend_diagnostics.list_issues(
         since=since,
         limit=limit,
-        run_id=str(run_id) if run_id is not None else None,
+        run_id=run_id_value,
     )
+    issues += client_diagnostics.list_issues(
+        since=since,
+        limit=limit,
+        run_id=run_id_value,
+    )
+    return sorted(issues, key=lambda issue: str(issue["timestamp"]), reverse=True)[
+        :limit
+    ]
 
 
-@app.get("/diagnostics/issues/{issue_id}", response_model=BackendIssueDetail)
+@app.get(
+    "/diagnostics/issues/{issue_id}",
+    response_model=BackendIssueDetail | ClientIssueDetail,
+)
 def show_issue(
     issue_id: Annotated[
         str,
-        Path(pattern=r"^backend:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"),
+        Path(
+            pattern=(
+                r"^(backend:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-"
+                r"[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|"
+                r"client:\d+)$"
+            )
+        ),
     ],
-    diagnostics: BackendDiagnostics = Depends(get_backend_diagnostics),
+    backend_diagnostics: BackendDiagnostics = Depends(get_backend_diagnostics),
+    client_diagnostics: ClientDiagnostics = Depends(get_client_diagnostics),
 ) -> dict[str, object]:
-    """Return bounded diagnostic context for one backend issue.
+    """Return bounded diagnostic context for one backend or Flutter issue.
 
     Args:
-        issue_id: Identifier in `backend:<uuid>` format. FastAPI rejects other
-            formats before querying the diagnostics adapter.
-        diagnostics: Read-only adapter used to retrieve issue context.
+        issue_id: Identifier in `backend:<uuid>` or `client:<group-id>` format.
+            FastAPI rejects other formats before querying an adapter.
+        backend_diagnostics: Read-only adapter used to query backend issues.
+        client_diagnostics: Read-only adapter used to query Flutter issues.
 
     Returns:
-        One issue summary, its complete stacktrace, up to 100 related logs,
-        matching trace spans, and a bounded metrics window.
+        One issue summary and its source-specific bounded evidence.
 
     Example:
         `/diagnostics/issues/backend:00000000-0000-0000-0000-000000000123`
         expands that specific backend failure.
     """
 
-    return diagnostics.get_issue(issue_id)
+    if issue_id.startswith("backend:"):
+        return backend_diagnostics.get_issue(issue_id)
+    return client_diagnostics.get_issue(issue_id)

@@ -53,6 +53,24 @@ def gateway_server() -> tuple[str, list[str]]:
                         "series": {},
                     },
                 }
+            if self.path.startswith("/diagnostics/issues/client:"):
+                value = {
+                    "summary": {
+                        "issue_id": "client:123",
+                        "timestamp": "2026-05-31T08:31:00Z",
+                        "service": "todo-flutter-macos",
+                        "exception_type": "StateError",
+                        "message": "temporary client exception",
+                    },
+                    "stacktrace": [{"filename": "main.dart", "lineNo": 12}],
+                    "breadcrumbs": [{"category": "navigation"}],
+                    "context": {
+                        "release": "dev-20260531-001",
+                        "environment": "local",
+                        "user_id": "demo-user",
+                        "session_id": "session-123",
+                    },
+                }
             body = json.dumps(value).encode()
             self.send_response(200)
             self.send_header("content-type", "application/json")
@@ -153,5 +171,42 @@ def test_show_command_supports_text_output(
         "Logs: 1\n"
         "Spans: 1\n"
         "Metrics window: 2026-05-31T08:25:00Z to 2026-05-31T08:35:00Z\n"
+    )
+    assert requests == [f"/diagnostics/issues/{issue_id}"]
+
+
+def test_show_command_formats_client_issue_text_output(
+    gateway_server: tuple[str, list[str]],
+) -> None:
+    gateway_url, requests = gateway_server
+    issue_id = "client:123"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(DIAGNOSTICS_SCRIPT),
+            "show",
+            issue_id,
+            "--format",
+            "text",
+        ],
+        check=False,
+        capture_output=True,
+        env={**os.environ, "DIAGNOSTICS_GATEWAY_URL": gateway_url},
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == (
+        f"Issue: {issue_id}\n"
+        "Time: 2026-05-31T08:31:00Z\n"
+        "Exception: StateError: temporary client exception\n"
+        "\n"
+        "Stacktrace frames: 1\n"
+        "Breadcrumbs: 1\n"
+        "Release: dev-20260531-001\n"
+        "Environment: local\n"
+        "User: demo-user\n"
+        "Session: session-123\n"
     )
     assert requests == [f"/diagnostics/issues/{issue_id}"]

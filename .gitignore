@@ -1,4 +1,5 @@
 .DS_Store
+.env
 .agents/*
 !.agents/skills/
 !.agents/skills/**
