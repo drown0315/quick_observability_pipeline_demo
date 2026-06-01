@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:todo_app/workload_run_id.dart' as workload;
 
 const _appEnvironment = String.fromEnvironment(
   'APP_ENVIRONMENT',
@@ -61,18 +62,24 @@ abstract class TodoRepository {
 class HttpTodoRepository implements TodoRepository {
   HttpTodoRepository({
     http.Client? client,
+    workload.WorkloadRunIdStore? workloadRunIdStore,
     this._baseUrl = const String.fromEnvironment(
       'TODO_API_BASE_URL',
       defaultValue: 'http://localhost:8000',
     ),
-  }) : _client = client ?? http.Client();
+  })  : _client = client ?? http.Client(),
+        _workloadRunIdStore = workloadRunIdStore ?? workload.workloadRunIdStore;
 
   final http.Client _client;
+  final workload.WorkloadRunIdStore _workloadRunIdStore;
   final String _baseUrl;
 
   @override
   Future<List<Todo>> listTodos() async {
-    final response = await _client.get(Uri.parse('$_baseUrl/todos'));
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/todos'),
+      headers: _headers(),
+    );
     _requireSuccess(response);
     return (jsonDecode(response.body) as List<dynamic>)
         .map((json) => Todo.fromJson(json as Map<String, dynamic>))
@@ -83,7 +90,7 @@ class HttpTodoRepository implements TodoRepository {
   Future<Todo> createTodo(String title) async {
     final response = await _client.post(
       Uri.parse('$_baseUrl/todos'),
-      headers: {'content-type': 'application/json'},
+      headers: _headers(includeJsonContentType: true),
       body: jsonEncode({'title': title}),
     );
     _requireSuccess(response);
@@ -94,7 +101,7 @@ class HttpTodoRepository implements TodoRepository {
   Future<Todo> setCompleted(int id, bool completed) async {
     final response = await _client.patch(
       Uri.parse('$_baseUrl/todos/$id'),
-      headers: {'content-type': 'application/json'},
+      headers: _headers(includeJsonContentType: true),
       body: jsonEncode({'completed': completed}),
     );
     _requireSuccess(response);
@@ -103,8 +110,19 @@ class HttpTodoRepository implements TodoRepository {
 
   @override
   Future<void> deleteTodo(int id) async {
-    final response = await _client.delete(Uri.parse('$_baseUrl/todos/$id'));
+    final response = await _client.delete(
+      Uri.parse('$_baseUrl/todos/$id'),
+      headers: _headers(),
+    );
     _requireSuccess(response);
+  }
+
+  Map<String, String> _headers({bool includeJsonContentType = false}) {
+    final runId = _workloadRunIdStore.current;
+    return {
+      if (includeJsonContentType) 'content-type': 'application/json',
+      if (runId != null) 'x-workload-run-id': runId,
+    };
   }
 
   void _requireSuccess(http.Response response) {
