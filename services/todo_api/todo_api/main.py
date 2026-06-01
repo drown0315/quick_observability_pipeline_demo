@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import traceback
 from time import perf_counter
 from uuid import UUID, uuid4
 
@@ -52,6 +53,12 @@ def path_template(request: Request) -> str:
     return getattr(route, "path", request.url.path)
 
 
+def current_trace_id() -> str:
+    span = trace.get_current_span()
+    span_context = span.get_span_context()
+    return f"{span_context.trace_id:032x}" if span_context.is_valid else ""
+
+
 @app.middleware("http")
 async def record_completed_request(request: Request, call_next) -> Response:
     if request.url.path == "/health":
@@ -61,6 +68,8 @@ async def record_completed_request(request: Request, call_next) -> Response:
     request_id = validated_uuid(request.headers.get("x-request-id")) or str(uuid4())
     run_id = validated_uuid(request.headers.get("x-workload-run-id"))
     status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    request.state.request_id = request_id
+    request.state.run_id = run_id
 
     try:
         response = await call_next(request)
@@ -71,10 +80,8 @@ async def record_completed_request(request: Request, call_next) -> Response:
         duration_ms = round((perf_counter() - started_at) * 1_000, 3)
         template = path_template(request)
         span = trace.get_current_span()
-        span_context = span.get_span_context()
-        trace_id = (
-            f"{span_context.trace_id:032x}" if span_context.is_valid else ""
-        )
+        trace_id = current_trace_id()
+        request.state.trace_id = trace_id
         attributes = {
             "service": SERVICE_NAME,
             "method": request.method,
@@ -117,6 +124,38 @@ FastAPIInstrumentor.instrument_app(
     excluded_urls="/health",
     exclude_spans=["receive", "send"],
 )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception(request: Request, error: Exception) -> JSONResponse:
+    request_id = getattr(request.state, "request_id", None) or str(uuid4())
+    run_id = getattr(request.state, "run_id", None)
+    trace_id = getattr(request.state, "trace_id", None) or current_trace_id()
+    event = {
+        "_msg": "unhandled_exception",
+        "event_type": "unhandled_exception",
+        "issue_id": f"backend:{uuid4()}",
+        "service": SERVICE_NAME,
+        "exception_type": type(error).__name__,
+        "message": str(error),
+        "stacktrace": "".join(
+            traceback.format_exception(type(error), error, error.__traceback__)
+        ),
+        "trace_id": trace_id,
+        "request_id": request_id,
+        "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
+        "user_id": DEMO_USER_ID,
+        "release": observability.release,
+        "environment": observability.environment,
+    }
+    if run_id is not None:
+        event["run_id"] = run_id
+    observability.logger.error(event)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "Internal Server Error"},
+        headers={"x-request-id": request_id},
+    )
 
 
 @app.exception_handler(TodoNotFoundError)
