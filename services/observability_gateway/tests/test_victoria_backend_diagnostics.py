@@ -122,6 +122,10 @@ def test_get_issue_returns_bounded_logs_trace_spans_and_fixed_metrics_window() -
             "duration_ms": [],
         },
     }
+    assert detail["trace_correlation"] == {
+        "trace_id": "abc",
+        "source": "backend_trace_context",
+    }
 
     log_requests = [
         parse_qs(request.content.decode())

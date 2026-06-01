@@ -131,8 +131,8 @@ class SentryClientDiagnostics:
 
         Returns:
             One client issue summary, the complete exception frame list, the
-            last 100 breadcrumbs, and release, environment, user, and session
-            context attached by the Flutter App.
+            last 100 breadcrumbs, release, environment, user, session context,
+            and Sentry trace context attached by the Flutter App.
         """
 
         group_id = self._group_id_from(issue_id)
@@ -156,6 +156,7 @@ class SentryClientDiagnostics:
         if not isinstance(user, dict):
             user = {}
         tags = self._tags_from(event)
+        trace_id = self._trace_id_from(event)
         return {
             "summary": {
                 "issue_id": issue_id,
@@ -171,6 +172,10 @@ class SentryClientDiagnostics:
                 "environment": event.get("environment") or tags.get("environment"),
                 "user_id": user.get("id"),
                 "session_id": tags.get("session_id"),
+            },
+            "trace_correlation": {
+                "trace_id": trace_id,
+                "source": "sentry_trace_context",
             },
         }
 
@@ -212,6 +217,33 @@ class SentryClientDiagnostics:
         """Return Sentry event tags keyed by tag name."""
 
         return {tag["key"]: tag["value"] for tag in event.get("tags", [])}
+
+    @staticmethod
+    def _trace_id_from(event: dict[str, object]) -> str | None:
+        """Return the Sentry trace ID attached to one event.
+
+        Args:
+            event: Latest Sentry event payload returned by the issue event API.
+                Missing or non-dictionary `contexts.trace` values mean the
+                event has no usable trace ID.
+
+        Returns:
+            The string trace ID from `contexts.trace.trace_id`, or `None` when
+            the field is absent or not a string.
+
+        Example:
+            An event containing `{"contexts": {"trace": {"trace_id": "abc"}}}`
+            returns `abc`.
+        """
+
+        contexts = event.get("contexts", {})
+        if not isinstance(contexts, dict):
+            return None
+        trace = contexts.get("trace", {})
+        if not isinstance(trace, dict):
+            return None
+        trace_id = trace.get("trace_id")
+        return trace_id if isinstance(trace_id, str) else None
 
     def _summary_from_issue(self, issue: dict[str, object]) -> dict[str, object]:
         """Normalize one Sentry issue group into a lightweight client summary."""

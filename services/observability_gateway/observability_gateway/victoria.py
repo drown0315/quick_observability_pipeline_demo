@@ -241,6 +241,10 @@ class VictoriaBackendDiagnostics:
                 "step_seconds": 60,
                 "series": metrics,
             },
+            "trace_correlation": {
+                "trace_id": trace_id,
+                "source": "backend_trace_context",
+            },
         }
 
     def _query_logs(self, query: str, *, limit: int) -> list[dict[str, object]]:

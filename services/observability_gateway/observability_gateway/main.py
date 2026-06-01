@@ -55,6 +55,23 @@ class MetricsWindow(BaseModel):
     series: dict[str, object]
 
 
+class TraceCorrelation(BaseModel):
+    """Trace identity exposed by one source-specific diagnostic response.
+
+    It contains:
+    - the trace ID read from a source-specific event, when available
+    - the source that supplied the trace ID
+
+    Example:
+        A Sentry event with trace context returns its trace ID with source
+        `sentry_trace_context`; a backend issue returns the trace ID logged
+        from the current OpenTelemetry span with source `backend_trace_context`.
+    """
+
+    trace_id: str | None = None
+    source: str
+
+
 class BackendIssueDetail(BaseModel):
     """Complete bounded diagnostic response for one backend issue.
 
@@ -76,6 +93,7 @@ class BackendIssueDetail(BaseModel):
     logs: list[dict[str, object]]
     spans: list[dict[str, object]]
     metrics: MetricsWindow
+    trace_correlation: TraceCorrelation
 
 
 class ClientIssueSummary(BaseModel):
@@ -108,6 +126,7 @@ class ClientIssueDetail(BaseModel):
     stacktrace: list[dict[str, object]]
     breadcrumbs: list[dict[str, object]]
     context: ClientContext
+    trace_correlation: TraceCorrelation
 
 
 class BackendDiagnostics(Protocol):

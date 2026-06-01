@@ -77,6 +77,12 @@ def test_get_issue_returns_bounded_stacktrace_breadcrumbs_and_client_context() -
                 "title": "StateError: temporary client exception",
                 "release": {"version": "dev-20260531-001"},
                 "user": {"id": "demo-user"},
+                "contexts": {
+                    "trace": {
+                        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+                        "span_id": "00f067aa0ba902b7",
+                    }
+                },
                 "tags": [
                     {"key": "environment", "value": "local"},
                     {"key": "session_id", "value": "session-123"},
@@ -136,6 +142,10 @@ def test_get_issue_returns_bounded_stacktrace_breadcrumbs_and_client_context() -
         "environment": "local",
         "user_id": "demo-user",
         "session_id": "session-123",
+    }
+    assert detail["trace_correlation"] == {
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+        "source": "sentry_trace_context",
     }
     assert len(requests) == 1
     assert (
