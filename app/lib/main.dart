@@ -27,6 +27,7 @@ Future<void> main() async {
       options.environment = _appEnvironment;
       options.sendDefaultPii = false;
       options.enableLogs = false;
+      options.propagateTraceparent = true;
     },
     appRunner: () async {
       if (kDebugMode) {
@@ -75,8 +76,8 @@ class HttpTodoRepository implements TodoRepository {
       'TODO_API_BASE_URL',
       defaultValue: 'http://localhost:8000',
     ),
-  }) : _client = client ?? http.Client(),
-       _workloadRunIdStore = workloadRunIdStore ?? workload.workloadRunIdStore;
+  })  : _client = client ?? createTodoApiClient(),
+        _workloadRunIdStore = workloadRunIdStore ?? workload.workloadRunIdStore;
 
   final http.Client _client;
   final workload.WorkloadRunIdStore _workloadRunIdStore;
@@ -157,6 +158,26 @@ class HttpTodoRepository implements TodoRepository {
       throw Exception('Todo API returned ${response.statusCode}');
     }
   }
+}
+
+/// Create the HTTP client used for Todo API requests.
+///
+/// Args:
+///   innerClient: Optional underlying client. Tests pass a mock client to
+///       observe outgoing headers without opening a socket. When omitted,
+///       `SentryHttpClient` creates its default `http.Client`.
+///   hub: Optional Sentry hub. Tests pass a configured hub to verify trace
+///       propagation. When omitted, the app-wide Sentry hub is used.
+///
+/// Returns:
+///   A Sentry HTTP client that records HTTP breadcrumbs and forwards trace
+///   headers for Todo API requests.
+///
+/// Example:
+///   `createTodoApiClient()` returns the production client used by
+///   `HttpTodoRepository` when no test client is injected.
+http.Client createTodoApiClient({http.Client? innerClient, Hub? hub}) {
+  return SentryHttpClient(client: innerClient, hub: hub);
 }
 
 class TodoApp extends StatelessWidget {
@@ -317,7 +338,7 @@ class _TodoPageState extends State<TodoPage> {
                         onChanged: _loading
                             ? null
                             : (completed) =>
-                                  _setCompleted(todo, completed ?? false),
+                                _setCompleted(todo, completed ?? false),
                       ),
                       title: Text(
                         todo.title,
@@ -335,9 +356,8 @@ class _TodoPageState extends State<TodoPage> {
                         child: ExcludeSemantics(
                           child: IconButton(
                             tooltip: 'Delete ${todo.title}',
-                            onPressed: _loading
-                                ? null
-                                : () => _deleteTodo(todo),
+                            onPressed:
+                                _loading ? null : () => _deleteTodo(todo),
                             icon: const Icon(Icons.delete),
                           ),
                         ),
