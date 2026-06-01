@@ -15,6 +15,10 @@ Read these files before changing architecture or domain behavior:
 - [Prototype Scope](docs/PROTOTYPE-SCOPE.md)
 - [ADR 0001](docs/adr/0001-hybrid-observability-pipeline.md)
 
+Read [Comment Writing Conventions](code_conventions/comments.md) before adding
+or changing comments and docstrings, including comments and docstrings in test
+code.
+
 ## Repository Layout
 
 ```text
@@ -78,6 +82,8 @@ flutter run -d macos
   intentionally modifies it.
 - Add focused tests for behavioral changes and run the relevant backend or
   Flutter validation commands before submitting a change.
+- Follow [Comment Writing Conventions](code_conventions/comments.md) whenever
+  adding or changing comments and docstrings in product or test code.
 
 ## Skills
 
