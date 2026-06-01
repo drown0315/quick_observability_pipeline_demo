@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:todo_app/main.dart';
 import 'package:todo_app/workload_run_id.dart';
 
@@ -39,5 +40,31 @@ void main() {
     await repository.listTodos();
 
     expect(capturedRequest.headers, isNot(contains('x-workload-run-id')));
+  });
+
+  test('Todo API requests forward Sentry and W3C trace context', () async {
+    final options = SentryOptions(
+      dsn: 'https://public@sentry.example.com/1',
+    )
+      ..tracesSampleRate = 1.0
+      ..propagateTraceparent = true;
+    final hub = Hub(options);
+    late http.Request capturedRequest;
+    final repository = HttpTodoRepository(
+      client: createTodoApiClient(
+        innerClient: MockClient((request) async {
+          capturedRequest = request;
+          return http.Response('[]', 200, request: request);
+        }),
+        hub: hub,
+      ),
+      workloadRunIdStore: WorkloadRunIdStore(),
+    );
+
+    await repository.listTodos();
+
+    expect(capturedRequest.headers, contains('sentry-trace'));
+    expect(capturedRequest.headers, contains('traceparent'));
+    expect(capturedRequest.headers['traceparent'], endsWith('-01'));
   });
 }

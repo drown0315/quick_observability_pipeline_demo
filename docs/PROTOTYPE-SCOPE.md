@@ -169,6 +169,25 @@ Cross-platform trace propagation uses SDK defaults first. If validation proves F
 
 `run_id` is a local harness field, not a production tracing concept. The workload runner creates a UUID for each run and sets it in the already-running debug Flutter App through a dedicated MCP tool. The Flutter HTTP client forwards it as `x-workload-run-id`, and FastAPI records it in structured logs.
 
+### Trace Propagation Validation
+
+The Flutter App uses `SentryHttpClient` at the Todo API network boundary and
+enables Sentry sampling plus W3C `traceparent` propagation. This is the
+adapter needed for compatibility with FastAPI OpenTelemetry extraction:
+Sentry's default `sentry-trace` header alone is useful for Sentry context, but
+the backend OpenTelemetry SDK expects `traceparent` for distributed trace
+correlation and only exports backend spans for sampled traces.
+
+The adapter is intentionally limited to the HTTP client boundary. Todo CRUD
+operations remain free of business-level trace instrumentation.
+
+Diagnostics detail responses expose the trace ID from both sides when present:
+
+- Flutter client details return `trace_correlation.trace_id` from the Sentry
+  event trace context.
+- Backend details return `trace_correlation.trace_id` from the current
+  OpenTelemetry span recorded in backend logs.
+
 ## Gateway API
 
 The Gateway exposes:

@@ -89,6 +89,10 @@ class StubBackendDiagnostics:
                 "step_seconds": 60,
                 "series": {"request_rate": []},
             },
+            "trace_correlation": {
+                "trace_id": "abc",
+                "source": "backend_trace_context",
+            },
         }
 
 
@@ -132,6 +136,10 @@ class StubClientDiagnostics:
                 "environment": "local",
                 "user_id": "demo-user",
                 "session_id": "session-123",
+            },
+            "trace_correlation": {
+                "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+                "source": "sentry_trace_context",
             },
         }
 
@@ -202,6 +210,10 @@ def test_show_backend_issue_returns_bounded_diagnostic_evidence(
             "step_seconds": 60,
             "series": {"request_rate": []},
         },
+        "trace_correlation": {
+            "trace_id": "abc",
+            "source": "backend_trace_context",
+        },
     }
     assert backend_diagnostics.show_calls == [ISSUE_ID]
 
@@ -227,6 +239,10 @@ def test_show_client_issue_returns_bounded_diagnostic_evidence(
             "environment": "local",
             "user_id": "demo-user",
             "session_id": "session-123",
+        },
+        "trace_correlation": {
+            "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+            "source": "sentry_trace_context",
         },
     }
     assert client_diagnostics.show_calls == [CLIENT_ISSUE_ID]

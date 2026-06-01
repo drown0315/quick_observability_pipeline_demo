@@ -27,6 +27,8 @@ Future<void> main() async {
       options.environment = _appEnvironment;
       options.sendDefaultPii = false;
       options.enableLogs = false;
+      options.tracesSampleRate = 1.0;
+      options.propagateTraceparent = true;
     },
     appRunner: () async {
       if (kDebugMode) {
@@ -75,8 +77,8 @@ class HttpTodoRepository implements TodoRepository {
       'TODO_API_BASE_URL',
       defaultValue: 'http://localhost:8000',
     ),
-  }) : _client = client ?? http.Client(),
-       _workloadRunIdStore = workloadRunIdStore ?? workload.workloadRunIdStore;
+  })  : _client = client ?? createTodoApiClient(),
+        _workloadRunIdStore = workloadRunIdStore ?? workload.workloadRunIdStore;
 
   final http.Client _client;
   final workload.WorkloadRunIdStore _workloadRunIdStore;
@@ -156,6 +158,78 @@ class HttpTodoRepository implements TodoRepository {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception('Todo API returned ${response.statusCode}');
     }
+  }
+}
+
+/// Create the HTTP client used for Todo API requests.
+///
+/// Args:
+///   innerClient: Optional underlying client. Tests pass a mock client to
+///       observe outgoing headers without opening a socket. When omitted,
+///       `SentryHttpClient` creates its default `http.Client`.
+///   hub: Optional Sentry hub. Tests pass a configured hub to verify trace
+///       propagation. When omitted, the app-wide Sentry hub is used.
+///
+/// Returns:
+///   A Sentry HTTP client that records HTTP breadcrumbs and forwards trace
+///   headers for Todo API requests.
+///
+/// Example:
+///   `createTodoApiClient()` returns the production client used by
+///   `HttpTodoRepository` when no test client is injected.
+http.Client createTodoApiClient({http.Client? innerClient, Hub? hub}) {
+  final effectiveHub = hub ?? HubAdapter();
+  return TodoApiTracingClient(
+    client: SentryHttpClient(client: innerClient, hub: effectiveHub),
+    hub: effectiveHub,
+  );
+}
+
+class TodoApiTracingClient extends http.BaseClient {
+  /// Wraps Todo API requests in a sampled Sentry transaction.
+  ///
+  /// Args:
+  ///   client: HTTP client that sends the request after Sentry headers are
+  ///       attached.
+  ///   hub: Sentry hub used to create the transaction bound to the current
+  ///       scope while the request is sent.
+  ///
+  /// Returns:
+  ///   A client whose outgoing requests carry a sampled W3C `traceparent`
+  ///   header so FastAPI OpenTelemetry exports backend spans.
+  ///
+  /// Example:
+  ///   Wrapping `SentryHttpClient` ensures one `POST /todos` request is
+  ///   represented by both Sentry client context and a VictoriaTraces backend
+  ///   span.
+  TodoApiTracingClient({required this.client, required this.hub});
+
+  final http.Client client;
+  final Hub hub;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final transaction = hub.startTransaction(
+      '${request.method} ${request.url.path}',
+      'http.client.todo_api',
+      bindToScope: true,
+    );
+    try {
+      final response = await client.send(request);
+      await transaction.finish(
+        status: SpanStatus.fromHttpStatusCode(response.statusCode),
+      );
+      return response;
+    } catch (_) {
+      await transaction.finish(status: SpanStatus.internalError());
+      rethrow;
+    }
+  }
+
+  @override
+  void close() {
+    client.close();
+    super.close();
   }
 }
 
@@ -317,7 +391,7 @@ class _TodoPageState extends State<TodoPage> {
                         onChanged: _loading
                             ? null
                             : (completed) =>
-                                  _setCompleted(todo, completed ?? false),
+                                _setCompleted(todo, completed ?? false),
                       ),
                       title: Text(
                         todo.title,
@@ -335,9 +409,8 @@ class _TodoPageState extends State<TodoPage> {
                         child: ExcludeSemantics(
                           child: IconButton(
                             tooltip: 'Delete ${todo.title}',
-                            onPressed: _loading
-                                ? null
-                                : () => _deleteTodo(todo),
+                            onPressed:
+                                _loading ? null : () => _deleteTodo(todo),
                             icon: const Icon(Icons.delete),
                           ),
                         ),

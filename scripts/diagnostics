@@ -71,6 +71,8 @@ def format_issue(issue: dict[str, object]) -> str:
     """
 
     summary = issue["summary"]
+    trace_correlation = issue.get("trace_correlation", {})
+    trace_id = trace_correlation.get("trace_id") if trace_correlation else None
     if "breadcrumbs" in issue:
         context = issue["context"]
         return "\n".join(
@@ -85,6 +87,7 @@ def format_issue(issue: dict[str, object]) -> str:
                 f"Environment: {context['environment']}",
                 f"User: {context['user_id']}",
                 f"Session: {context['session_id']}",
+                f"Trace ID: {trace_id}",
             ]
         )
     return "\n".join(
@@ -99,6 +102,7 @@ def format_issue(issue: dict[str, object]) -> str:
             f"Logs: {len(issue['logs'])}",
             f"Spans: {len(issue['spans'])}",
             f"Metrics window: {issue['metrics']['start']} to {issue['metrics']['end']}",
+            f"Trace ID: {trace_id}",
         ]
     )
 

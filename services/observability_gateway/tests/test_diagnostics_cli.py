@@ -52,6 +52,10 @@ def gateway_server() -> tuple[str, list[str]]:
                         "step_seconds": 60,
                         "series": {},
                     },
+                    "trace_correlation": {
+                        "trace_id": "abc",
+                        "source": "backend_trace_context",
+                    },
                 }
             if self.path.startswith("/diagnostics/issues/client:"):
                 value = {
@@ -69,6 +73,10 @@ def gateway_server() -> tuple[str, list[str]]:
                         "environment": "local",
                         "user_id": "demo-user",
                         "session_id": "session-123",
+                    },
+                    "trace_correlation": {
+                        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+                        "source": "sentry_trace_context",
                     },
                 }
             body = json.dumps(value).encode()
@@ -171,6 +179,7 @@ def test_show_command_supports_text_output(
         "Logs: 1\n"
         "Spans: 1\n"
         "Metrics window: 2026-05-31T08:25:00Z to 2026-05-31T08:35:00Z\n"
+        "Trace ID: abc\n"
     )
     assert requests == [f"/diagnostics/issues/{issue_id}"]
 
@@ -208,5 +217,6 @@ def test_show_command_formats_client_issue_text_output(
         "Environment: local\n"
         "User: demo-user\n"
         "Session: session-123\n"
+        "Trace ID: 4bf92f3577b34da6a3ce929d0e0e4736\n"
     )
     assert requests == [f"/diagnostics/issues/{issue_id}"]
