@@ -128,9 +128,12 @@ class SelectorResolver:
             raise SelectorResolutionError(
                 "selector_ambiguous", selector, candidates=matches
             )
+        snapshot_id = snapshot.get("snapshot_id", snapshot.get("snapshotId"))
+        if snapshot_id is None:
+            raise ValueError("semantic snapshot is missing its snapshot ID")
         return {
             "ref": matches[0]["ref"],
-            "snapshotId": snapshot["snapshotId"],
+            "snapshotId": snapshot_id,
         }
 
     @staticmethod

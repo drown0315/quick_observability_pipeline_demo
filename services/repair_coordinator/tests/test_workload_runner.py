@@ -241,7 +241,7 @@ steps:
         "code": "timeout",
         "message": "wait predicate did not match",
     }
-    assert result["last_snapshot"]["snapshotId"] == 17
+    assert result["last_snapshot"]["snapshot_id"] == 17
     assert result["app_errors"] == {"errors": []}
     assert [invocation["name"] for invocation in invocations] == [
         "fmt_client_tool",
@@ -256,7 +256,11 @@ def run_coordinator(
     database_path: Path,
     extra_environment: dict[str, str],
 ) -> object:
-    """Run one Coordinator CLI command and return its JSON response."""
+    """Run one workload CLI command and return its JSON response.
+
+    `run-workload` does not use Coordinator task state, so this helper
+    deliberately omits `REPAIR_COORDINATOR_DB_PATH`.
+    """
 
     result = subprocess.run(
         [sys.executable, "-m", "repair_coordinator", *arguments],
@@ -265,7 +269,6 @@ def run_coordinator(
         cwd=SERVICE_ROOT,
         env={
             **os.environ,
-            "REPAIR_COORDINATOR_DB_PATH": str(database_path),
             **extra_environment,
         },
         text=True,
@@ -317,7 +320,7 @@ if name == "semantic_snapshot":
             }
         )
     data = {
-        "snapshotId": 17,
+        "snapshot_id": 17,
         "nodes": nodes,
     }
 if name == "get_app_errors":

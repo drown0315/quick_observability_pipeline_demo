@@ -83,6 +83,13 @@ def main() -> int:
     """Run one Repair Coordinator CLI command and print its JSON response."""
 
     args = build_parser().parse_args()
+    if args.command == "run-workload":
+        value = WorkloadRunner.from_environment().run(
+            args.workload_path, run_id=args.run_id
+        )
+        print(json.dumps(value))
+        return 0
+
     store = RepairTaskStore(Path(os.environ["REPAIR_COORDINATOR_DB_PATH"]))
     try:
         if args.command == "poll-once":
@@ -101,10 +108,6 @@ def main() -> int:
         elif args.command == "invoke-codex":
             value = CodexRunner.from_environment().invoke(
                 store.get_task(args.task_id), attempt=args.attempt
-            )
-        elif args.command == "run-workload":
-            value = WorkloadRunner.from_environment().run(
-                args.workload_path, run_id=args.run_id
             )
         elif args.command == "check-changes":
             value = ChangeGuard().check(store.get_task(args.task_id))
