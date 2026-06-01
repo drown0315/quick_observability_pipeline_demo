@@ -28,7 +28,9 @@ FastAPI service, SQLite storage, and Docker Compose volume for local
 persistence. Further observability work is tracked as GitHub issues.
 
 See [Prototype Scope](docs/PROTOTYPE-SCOPE.md) and
-[ADR 0001](docs/adr/0001-hybrid-observability-pipeline.md).
+[ADR 0001](docs/adr/0001-hybrid-observability-pipeline.md). Use
+[Repair Coordinator Acceptance](docs/REPAIR-COORDINATOR-ACCEPTANCE.md) for the
+local repair-loop validation steps and current Flutter client TODO.
 
 ## Run Locally
 
