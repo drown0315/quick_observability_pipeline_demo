@@ -51,8 +51,11 @@ steps:
     }
     assert invocations == [
         {
-            "name": "todo_set_workload_run_id",
-            "arguments": {"run_id": RUN_ID},
+            "name": "fmt_client_tool",
+            "arguments": {
+                "toolName": "todo_set_workload_run_id",
+                "arguments": {"run_id": RUN_ID},
+            },
         },
         {
             "name": "semantic_snapshot",
@@ -115,8 +118,11 @@ steps:
     }
     assert invocations == [
         {
-            "name": "todo_set_workload_run_id",
-            "arguments": {"run_id": RUN_ID},
+            "name": "fmt_client_tool",
+            "arguments": {
+                "toolName": "todo_set_workload_run_id",
+                "arguments": {"run_id": RUN_ID},
+            },
         },
         {
             "name": "semantic_snapshot",
@@ -187,7 +193,7 @@ steps:
     assert result["app_errors"] == {"errors": []}
     assert "failed_at" in result
     assert [invocation["name"] for invocation in invocations] == [
-        "todo_set_workload_run_id",
+        "fmt_client_tool",
         "semantic_snapshot",
         "get_app_errors",
     ]
@@ -238,7 +244,7 @@ steps:
     assert result["last_snapshot"]["snapshotId"] == 17
     assert result["app_errors"] == {"errors": []}
     assert [invocation["name"] for invocation in invocations] == [
-        "todo_set_workload_run_id",
+        "fmt_client_tool",
         "wait_for",
         "semantic_snapshot",
         "get_app_errors",

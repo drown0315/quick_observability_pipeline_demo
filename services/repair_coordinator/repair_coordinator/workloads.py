@@ -37,7 +37,9 @@ class ToolkitCommandError(Exception):
     """Structured failure returned by one Flutter MCP toolkit command."""
 
     def __init__(self, error: dict[str, object]) -> None:
-        super().__init__(str(error.get("code", "toolkit_error")))
+        code = str(error.get("code", "toolkit_error"))
+        message = str(error.get("message", "Flutter MCP toolkit command failed"))
+        super().__init__(f"{code}: {message}")
         self.result = error
 
 
@@ -178,7 +180,13 @@ class WorkloadRunner:
 
         workload = yaml.safe_load(workload_path.read_text())
         variables = self._variables(workload.get("variables", {}), run_id=run_id)
-        self._toolkit.execute("todo_set_workload_run_id", {"run_id": run_id})
+        self._toolkit.execute(
+            "fmt_client_tool",
+            {
+                "toolName": "todo_set_workload_run_id",
+                "arguments": {"run_id": run_id},
+            },
+        )
         completed_steps = 0
         for index, raw_step in enumerate(workload["steps"]):
             step = self._expand(raw_step, variables)

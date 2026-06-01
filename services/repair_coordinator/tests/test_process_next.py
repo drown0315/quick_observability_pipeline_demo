@@ -118,7 +118,7 @@ def test_process_next_repairs_validates_and_publishes_pull_request(
         "discover_debug_apps",
         "discover_debug_apps",
         "hot_restart_flutter",
-        "todo_set_workload_run_id",
+        "fmt_client_tool",
     ]
     assert flutter_launch_capture_path.read_text() == str(worktree_root / "repair-1")
     assert any("run_id=" in request for request in gateway_requests)
