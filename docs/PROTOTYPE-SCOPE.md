@@ -172,11 +172,11 @@ Cross-platform trace propagation uses SDK defaults first. If validation proves F
 ### Trace Propagation Validation
 
 The Flutter App uses `SentryHttpClient` at the Todo API network boundary and
-enables Sentry's W3C `traceparent` propagation option. This is the adapter
-needed for compatibility with FastAPI OpenTelemetry extraction: Sentry's
-default `sentry-trace` header alone is useful for Sentry context, but the
-backend OpenTelemetry SDK expects `traceparent` for distributed trace
-correlation.
+enables Sentry sampling plus W3C `traceparent` propagation. This is the
+adapter needed for compatibility with FastAPI OpenTelemetry extraction:
+Sentry's default `sentry-trace` header alone is useful for Sentry context, but
+the backend OpenTelemetry SDK expects `traceparent` for distributed trace
+correlation and only exports backend spans for sampled traces.
 
 The adapter is intentionally limited to the HTTP client boundary. Todo CRUD
 operations remain free of business-level trace instrumentation.

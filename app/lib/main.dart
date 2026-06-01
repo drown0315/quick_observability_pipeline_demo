@@ -27,6 +27,7 @@ Future<void> main() async {
       options.environment = _appEnvironment;
       options.sendDefaultPii = false;
       options.enableLogs = false;
+      options.tracesSampleRate = 1.0;
       options.propagateTraceparent = true;
     },
     appRunner: () async {
@@ -177,7 +178,59 @@ class HttpTodoRepository implements TodoRepository {
 ///   `createTodoApiClient()` returns the production client used by
 ///   `HttpTodoRepository` when no test client is injected.
 http.Client createTodoApiClient({http.Client? innerClient, Hub? hub}) {
-  return SentryHttpClient(client: innerClient, hub: hub);
+  final effectiveHub = hub ?? HubAdapter();
+  return TodoApiTracingClient(
+    client: SentryHttpClient(client: innerClient, hub: effectiveHub),
+    hub: effectiveHub,
+  );
+}
+
+class TodoApiTracingClient extends http.BaseClient {
+  /// Wraps Todo API requests in a sampled Sentry transaction.
+  ///
+  /// Args:
+  ///   client: HTTP client that sends the request after Sentry headers are
+  ///       attached.
+  ///   hub: Sentry hub used to create the transaction bound to the current
+  ///       scope while the request is sent.
+  ///
+  /// Returns:
+  ///   A client whose outgoing requests carry a sampled W3C `traceparent`
+  ///   header so FastAPI OpenTelemetry exports backend spans.
+  ///
+  /// Example:
+  ///   Wrapping `SentryHttpClient` ensures one `POST /todos` request is
+  ///   represented by both Sentry client context and a VictoriaTraces backend
+  ///   span.
+  TodoApiTracingClient({required this.client, required this.hub});
+
+  final http.Client client;
+  final Hub hub;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final transaction = hub.startTransaction(
+      '${request.method} ${request.url.path}',
+      'http.client.todo_api',
+      bindToScope: true,
+    );
+    try {
+      final response = await client.send(request);
+      await transaction.finish(
+        status: SpanStatus.fromHttpStatusCode(response.statusCode),
+      );
+      return response;
+    } catch (_) {
+      await transaction.finish(status: SpanStatus.internalError());
+      rethrow;
+    }
+  }
+
+  @override
+  void close() {
+    client.close();
+    super.close();
+  }
 }
 
 class TodoApp extends StatelessWidget {

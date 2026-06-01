@@ -45,7 +45,9 @@ void main() {
   test('Todo API requests forward Sentry and W3C trace context', () async {
     final options = SentryOptions(
       dsn: 'https://public@sentry.example.com/1',
-    )..propagateTraceparent = true;
+    )
+      ..tracesSampleRate = 1.0
+      ..propagateTraceparent = true;
     final hub = Hub(options);
     late http.Request capturedRequest;
     final repository = HttpTodoRepository(
@@ -63,5 +65,6 @@ void main() {
 
     expect(capturedRequest.headers, contains('sentry-trace'));
     expect(capturedRequest.headers, contains('traceparent'));
+    expect(capturedRequest.headers['traceparent'], endsWith('-01'));
   });
 }
