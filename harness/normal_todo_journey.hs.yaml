@@ -1,0 +1,34 @@
+version: 1
+name: normal_todo_journey
+variables:
+  todo_title: normal-todo-${run_id}
+steps:
+  - action: enter_text
+    selector:
+      type: textField
+      label: New Todo
+    text: ${todo_title}
+  - action: tap
+    selector:
+      type: button
+      label: Add
+  - action: wait_for
+    predicate:
+      kind: text
+      text: ${todo_title}
+  - action: tap
+    selector:
+      type: checkbox
+      label: Complete ${todo_title}
+  - action: wait_for
+    predicate:
+      kind: stable
+      stableWindowMs: 300
+  - action: tap
+    selector:
+      type: button
+      label: Delete ${todo_title}
+  - action: wait_for
+    predicate:
+      kind: noText
+      text: ${todo_title}

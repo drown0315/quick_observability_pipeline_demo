@@ -6,6 +6,7 @@
 .agents/skills/**/.DS_Store
 .idea/
 .dart_tool/
+.flutter_mcp/
 .flutter-plugins
 .flutter-plugins-dependencies
 .packages

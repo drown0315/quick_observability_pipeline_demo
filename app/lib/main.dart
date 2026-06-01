@@ -3,7 +3,10 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:mcp_toolkit/mcp_toolkit.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:todo_app/todo_mcp_tools.dart';
+import 'package:todo_app/workload_run_id.dart' as workload;
 
 const _appEnvironment = String.fromEnvironment(
   'APP_ENVIRONMENT',
@@ -26,6 +29,12 @@ Future<void> main() async {
       options.enableLogs = false;
     },
     appRunner: () async {
+      if (kDebugMode) {
+        MCPToolkitBinding.instance
+          ..initialize()
+          ..initializeFlutterToolkit();
+        await MCPToolkitBinding.instance.addEntries(entries: todoMcpEntries());
+      }
       await Sentry.configureScope((scope) async {
         await scope.setUser(SentryUser(id: 'demo-user'));
         await scope.setTag('session_id', sessionId);
@@ -61,18 +70,24 @@ abstract class TodoRepository {
 class HttpTodoRepository implements TodoRepository {
   HttpTodoRepository({
     http.Client? client,
+    workload.WorkloadRunIdStore? workloadRunIdStore,
     this._baseUrl = const String.fromEnvironment(
       'TODO_API_BASE_URL',
       defaultValue: 'http://localhost:8000',
     ),
-  }) : _client = client ?? http.Client();
+  }) : _client = client ?? http.Client(),
+       _workloadRunIdStore = workloadRunIdStore ?? workload.workloadRunIdStore;
 
   final http.Client _client;
+  final workload.WorkloadRunIdStore _workloadRunIdStore;
   final String _baseUrl;
 
   @override
   Future<List<Todo>> listTodos() async {
-    final response = await _client.get(Uri.parse('$_baseUrl/todos'));
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/todos'),
+      headers: _headers(),
+    );
     _requireSuccess(response);
     return (jsonDecode(response.body) as List<dynamic>)
         .map((json) => Todo.fromJson(json as Map<String, dynamic>))
@@ -83,7 +98,7 @@ class HttpTodoRepository implements TodoRepository {
   Future<Todo> createTodo(String title) async {
     final response = await _client.post(
       Uri.parse('$_baseUrl/todos'),
-      headers: {'content-type': 'application/json'},
+      headers: _headers(includeJsonContentType: true),
       body: jsonEncode({'title': title}),
     );
     _requireSuccess(response);
@@ -94,7 +109,7 @@ class HttpTodoRepository implements TodoRepository {
   Future<Todo> setCompleted(int id, bool completed) async {
     final response = await _client.patch(
       Uri.parse('$_baseUrl/todos/$id'),
-      headers: {'content-type': 'application/json'},
+      headers: _headers(includeJsonContentType: true),
       body: jsonEncode({'completed': completed}),
     );
     _requireSuccess(response);
@@ -103,8 +118,38 @@ class HttpTodoRepository implements TodoRepository {
 
   @override
   Future<void> deleteTodo(int id) async {
-    final response = await _client.delete(Uri.parse('$_baseUrl/todos/$id'));
+    final response = await _client.delete(
+      Uri.parse('$_baseUrl/todos/$id'),
+      headers: _headers(),
+    );
     _requireSuccess(response);
+  }
+
+  /// Build headers for one Todo API request.
+  ///
+  /// Args:
+  ///   includeJsonContentType: Whether to include `content-type:
+  ///       application/json` for requests with a JSON body. Requests without a
+  ///       body leave the content type unset.
+  ///
+  /// Returns:
+  ///   Request headers containing the current `x-workload-run-id` when a valid
+  ///   workload run ID has been stored. Before a run ID is set, the workload
+  ///   header is omitted.
+  ///
+  /// Example:
+  ///   With current run ID `00000000-0000-0000-0000-000000000123` and
+  ///   `includeJsonContentType: true`, the returned headers include both
+  ///   `content-type` and `x-workload-run-id`.
+  Map<String, String> _headers({bool includeJsonContentType = false}) {
+    final runId = _workloadRunIdStore.current;
+    final headers = {
+      if (includeJsonContentType) 'content-type': 'application/json',
+    };
+    if (runId != null) {
+      headers['x-workload-run-id'] = runId;
+    }
+    return headers;
   }
 
   void _requireSuccess(http.Response response) {
@@ -267,11 +312,12 @@ class _TodoPageState extends State<TodoPage> {
                     ListTile(
                       key: Key('todo-${todo.id}'),
                       leading: Checkbox(
+                        semanticLabel: 'Complete ${todo.title}',
                         value: todo.completed,
                         onChanged: _loading
                             ? null
                             : (completed) =>
-                                _setCompleted(todo, completed ?? false),
+                                  _setCompleted(todo, completed ?? false),
                       ),
                       title: Text(
                         todo.title,
@@ -281,10 +327,20 @@ class _TodoPageState extends State<TodoPage> {
                               : null,
                         ),
                       ),
-                      trailing: IconButton(
-                        tooltip: 'Delete ${todo.title}',
-                        onPressed: _loading ? null : () => _deleteTodo(todo),
-                        icon: const Icon(Icons.delete),
+                      trailing: Semantics(
+                        label: 'Delete ${todo.title}',
+                        button: true,
+                        container: true,
+                        onTap: _loading ? null : () => _deleteTodo(todo),
+                        child: ExcludeSemantics(
+                          child: IconButton(
+                            tooltip: 'Delete ${todo.title}',
+                            onPressed: _loading
+                                ? null
+                                : () => _deleteTodo(todo),
+                            icon: const Icon(Icons.delete),
+                          ),
+                        ),
                       ),
                     ),
                 ],
