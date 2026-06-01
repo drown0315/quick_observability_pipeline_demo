@@ -1,0 +1,92 @@
+version: 1
+name: mixed_user_workload
+variables:
+  first_todo_title: normal-first-${run_id}
+  second_todo_title: normal-second-${run_id}
+  backend_crash_todo_title: backend-crash-${run_id}
+  client_crash_todo_title: mobile-crash-${run_id}
+steps:
+  - action: enter_text
+    selector:
+      type: textField
+      label: New Todo
+    text: ${first_todo_title}
+  - action: tap
+    selector:
+      type: button
+      label: Add
+  - action: wait_for
+    predicate:
+      kind: text
+      text: ${first_todo_title}
+  - action: tap
+    selector:
+      type: checkbox
+      label: Complete ${first_todo_title}
+  - action: wait_for
+    predicate:
+      kind: stable
+      stableWindowMs: 300
+  - action: enter_text
+    selector:
+      type: textField
+      label: New Todo
+    text: ${second_todo_title}
+  - action: tap
+    selector:
+      type: button
+      label: Add
+  - action: wait_for
+    predicate:
+      kind: text
+      text: ${second_todo_title}
+  - action: tap
+    selector:
+      type: button
+      label: Delete ${second_todo_title}
+  - action: wait_for
+    predicate:
+      kind: noText
+      text: ${second_todo_title}
+  - action: enter_text
+    selector:
+      type: textField
+      label: New Todo
+    text: ${backend_crash_todo_title}
+  - action: tap
+    selector:
+      type: button
+      label: Add
+  - action: wait_for
+    predicate:
+      kind: text
+      text: ${backend_crash_todo_title}
+  - action: tap
+    selector:
+      type: button
+      label: Delete ${backend_crash_todo_title}
+  - action: wait_for
+    predicate:
+      kind: noText
+      text: ${backend_crash_todo_title}
+  - action: enter_text
+    selector:
+      type: textField
+      label: New Todo
+    text: ${client_crash_todo_title}
+  - action: tap
+    selector:
+      type: button
+      label: Add
+  - action: wait_for
+    predicate:
+      kind: text
+      text: ${client_crash_todo_title}
+  - action: tap
+    selector:
+      type: checkbox
+      label: Complete ${client_crash_todo_title}
+  - action: wait_for
+    predicate:
+      kind: stable
+      stableWindowMs: 300

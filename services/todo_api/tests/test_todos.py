@@ -135,3 +135,61 @@ def test_request_log_uses_path_template_and_filters_invalid_correlation_ids(
     assert event["request_id"] == response.headers["x-request-id"]
     assert UUID(str(event["request_id"]))
     assert "run_id" not in event
+
+
+def test_unhandled_delete_failure_emits_backend_issue_log(
+    tmp_path, monkeypatch, request_log_events: list[dict[str, object]]
+) -> None:
+    monkeypatch.setenv("TODO_DB_PATH", str(tmp_path / "todos.db"))
+    run_id = str(uuid4())
+
+    with TestClient(app, raise_server_exceptions=False) as test_client:
+        create_response = test_client.post(
+            "/todos", json={"title": f"crash todo {run_id}"}
+        )
+        todo_id = create_response.json()["id"]
+
+        delete_response = test_client.delete(
+            f"/todos/{todo_id}",
+            headers={"x-workload-run-id": run_id},
+        )
+
+    assert delete_response.status_code == 500
+    assert UUID(delete_response.headers["x-request-id"])
+
+    exception_event = next(
+        event
+        for event in request_log_events
+        if event["event_type"] == "unhandled_exception"
+    )
+    assert str(exception_event["issue_id"]).startswith("backend:")
+    assert UUID(str(exception_event["issue_id"]).removeprefix("backend:"))
+    assert exception_event == {
+        "_msg": "unhandled_exception",
+        "event_type": "unhandled_exception",
+        "issue_id": exception_event["issue_id"],
+        "service": "todo-api",
+        "exception_type": "RuntimeError",
+        "message": "todo deletion failed",
+        "stacktrace": exception_event["stacktrace"],
+        "trace_id": "",
+        "request_id": delete_response.headers["x-request-id"],
+        "status_code": 500,
+        "user_id": "demo-user",
+        "release": "local",
+        "environment": "local",
+        "run_id": run_id,
+    }
+    assert "RuntimeError: todo deletion failed" in str(exception_event["stacktrace"])
+    serialized_event = json.dumps(exception_event)
+    assert "crash todo" not in serialized_event
+
+    completed_event = next(
+        event
+        for event in request_log_events
+        if event["event_type"] == "http_request_completed"
+        and event["method"] == "DELETE"
+    )
+    assert completed_event["event_type"] == "http_request_completed"
+    assert completed_event["path_template"] == "/todos/{todo_id}"
+    assert completed_event["status_code"] == 500

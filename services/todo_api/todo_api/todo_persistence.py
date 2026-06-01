@@ -46,7 +46,9 @@ class TodoPersistence:
         return self._require(todo_id)
 
     def delete(self, todo_id: int) -> None:
-        self._require(todo_id)
+        todo = self._require(todo_id)
+        if "crash" in todo.title:
+            raise RuntimeError("todo deletion failed")
         self._connection.execute("DELETE FROM todos WHERE id = ?", (todo_id,))
         self._connection.commit()
 
