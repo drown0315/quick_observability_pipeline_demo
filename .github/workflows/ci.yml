@@ -32,10 +32,12 @@ jobs:
           cache-dependency-glob: ${{ matrix.service }}/uv.lock
 
       - name: Install dependencies
-        run: uv sync --project "${{ matrix.service }}" --group dev --locked
+        run: uv sync --group dev --locked
+        working-directory: ${{ matrix.service }}
 
       - name: Run unit tests
-        run: uv run --project "${{ matrix.service }}" pytest
+        run: uv run --locked --group dev pytest
+        working-directory: ${{ matrix.service }}
 
   flutter:
     name: Flutter checks
