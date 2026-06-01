@@ -4,7 +4,10 @@ from pathlib import Path
 import subprocess
 import sys
 
+import yaml
+
 SERVICE_ROOT = Path(__file__).parents[1]
+REPOSITORY_ROOT = Path(__file__).parents[3]
 RUN_ID = "00000000-0000-0000-0000-000000000123"
 
 
@@ -278,6 +281,32 @@ def test_run_workload_retries_one_transient_toolkit_process_failure(
 
     assert result["status"] == "passed"
     assert len(capture_path.read_text().splitlines()) == 1
+
+
+def test_reviewed_workloads_wait_for_todo_action_after_add() -> None:
+    expected_wait_labels = {
+        "normal_todo_journey.hs.yaml": ["Complete ${todo_title}"],
+        "mixed_user_workload.hs.yaml": [
+            "Complete ${first_todo_title}",
+            "Delete ${second_todo_title}",
+            "Delete ${backend_crash_todo_title}",
+            "Complete ${client_crash_todo_title}",
+        ],
+    }
+
+    for filename, expected_labels in expected_wait_labels.items():
+        workload = yaml.safe_load((REPOSITORY_ROOT / "harness" / filename).read_text())
+        steps = workload["steps"]
+        add_indexes = [
+            index
+            for index, step in enumerate(steps)
+            if step.get("action") == "tap"
+            and step.get("selector", {}).get("label") == "Add"
+        ]
+
+        assert [
+            steps[index + 1]["predicate"]["text"] for index in add_indexes
+        ] == expected_labels
 
 
 def run_coordinator(
