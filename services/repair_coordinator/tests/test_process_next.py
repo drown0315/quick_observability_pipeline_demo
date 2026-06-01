@@ -251,21 +251,37 @@ import os
 from pathlib import Path
 import sys
 
-name = sys.argv[sys.argv.index("--name") + 1]
-arguments = json.loads(sys.argv[sys.argv.index("--args") + 1])
-with Path(os.environ["FLUTTER_MCP_TOOLKIT_CAPTURE_PATH"]).open("a") as capture:
-    capture.write(json.dumps({"name": name, "arguments": arguments}) + "\\n")
-data = {}
-if name == "discover_debug_apps":
-    capture_path = Path(os.environ["FLUTTER_MCP_TOOLKIT_CAPTURE_PATH"])
-    discoveries = [
-        line
-        for line in capture_path.read_text().splitlines()
-        if json.loads(line)["name"] == "discover_debug_apps"
-    ]
-    target_id = "baseline" if len(discoveries) == 1 else "repair"
-    data = {"count": 1, "targets": [{"targetId": target_id}]}
-print(json.dumps({"ok": True, "data": data, "error": None}))
+if sys.argv[1:] != ["serve"]:
+    raise SystemExit("expected serve mode")
+capture_path = Path(os.environ["FLUTTER_MCP_TOOLKIT_CAPTURE_PATH"])
+for line in sys.stdin:
+    request = json.loads(line)
+    if request["method"] == "initialize":
+        print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": {}}), flush=True)
+        continue
+    name = request["params"]["name"]
+    arguments = request["params"]["args"]
+    with capture_path.open("a") as capture:
+        capture.write(json.dumps({"name": name, "arguments": arguments}) + "\\n")
+    data = {}
+    if name == "discover_debug_apps":
+        discoveries = [
+            line
+            for line in capture_path.read_text().splitlines()
+            if json.loads(line)["name"] == "discover_debug_apps"
+        ]
+        target_id = "baseline" if len(discoveries) == 1 else "repair"
+        data = {"count": 1, "targets": [{"targetId": target_id}]}
+    print(
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": request["id"],
+                "result": {"ok": True, "data": data, "error": None},
+            }
+        ),
+        flush=True,
+    )
 """
     )
     toolkit_path.chmod(0o755)

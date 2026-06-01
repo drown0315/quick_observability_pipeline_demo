@@ -43,12 +43,16 @@ class ToolkitCommandError(Exception):
         self.result = error
 
 
+class ToolkitProcessError(Exception):
+    """Failure to exchange JSON-RPC messages with the toolkit daemon."""
+
+
 class ToolkitClient:
     """Run Flutter MCP toolkit commands and return their data payloads.
 
-    The client contains the local `flutter-mcp-toolkit` command. Each call uses
-    the CLI `exec` interface so workload replay drives the running Flutter App
-    through the same MCP tools available to Codex.
+    The client contains the local `flutter-mcp-toolkit` command and one daemon
+    process. Calls share the daemon's Flutter VM connection so a workload can
+    execute several UI actions without reconnecting between steps.
 
     Example:
         Executing `semantic_snapshot` returns its snapshot ID and semantic
@@ -57,6 +61,8 @@ class ToolkitClient:
 
     def __init__(self, command: list[str]) -> None:
         self._command = command
+        self._process: subprocess.Popen[str] | None = None
+        self._next_request_id = 1
 
     @classmethod
     def from_environment(cls) -> "ToolkitClient":
@@ -71,30 +77,98 @@ class ToolkitClient:
     def execute(self, name: str, arguments: dict[str, object]) -> dict[str, object]:
         """Execute one Flutter MCP command and return its data payload."""
 
-        result = subprocess.run(
-            [
-                *self._command,
-                "exec",
-                "--name",
-                name,
-                "--args",
-                json.dumps(arguments),
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            raise ToolkitCommandError(
-                {
-                    "code": "toolkit_process_failed",
-                    "message": result.stderr.strip(),
-                }
-            )
-        envelope = json.loads(result.stdout)
+        for attempt in range(2):
+            try:
+                envelope = self._request(
+                    "command/execute",
+                    {"name": name, "args": arguments},
+                )
+                break
+            except ToolkitProcessError as error:
+                self.close()
+                if attempt == 1:
+                    raise ToolkitCommandError(
+                        {
+                            "code": "toolkit_process_failed",
+                            "message": str(error),
+                        }
+                    ) from error
         if not envelope.get("ok"):
             raise ToolkitCommandError(envelope["error"])
         return envelope["data"]
+
+    def close(self) -> None:
+        """Stop the toolkit daemon when this client no longer needs its VM connection."""
+
+        if self._process is None:
+            return
+        self._process.terminate()
+        try:
+            self._process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            self._process.kill()
+            self._process.wait()
+        self._process = None
+
+    def _request(self, method: str, params: dict[str, object]) -> dict[str, object]:
+        """Send one JSON-RPC request to the shared toolkit daemon."""
+
+        if self._process is None:
+            self._start()
+        return self._send_request(method, params)
+
+    def _start(self) -> None:
+        """Start and initialize one toolkit daemon."""
+
+        self._process = subprocess.Popen(
+            [*self._command, "serve"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        self._send_request("initialize", {})
+
+    def _send_request(
+        self, method: str, params: dict[str, object]
+    ) -> dict[str, object]:
+        """Write one request and return its JSON-RPC result object."""
+
+        if (
+            self._process is None
+            or self._process.stdin is None
+            or self._process.stdout is None
+        ):
+            raise ToolkitProcessError("toolkit daemon is not running")
+        request_id = self._next_request_id
+        self._next_request_id += 1
+        try:
+            self._process.stdin.write(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "method": method,
+                        "params": params,
+                    }
+                )
+                + "\n"
+            )
+            self._process.stdin.flush()
+            line = self._process.stdout.readline()
+        except (BrokenPipeError, OSError) as error:
+            raise ToolkitProcessError(
+                "toolkit daemon stopped while sending a request"
+            ) from error
+        if not line:
+            raise ToolkitProcessError("toolkit daemon stopped before replying")
+        try:
+            response = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise ToolkitProcessError("toolkit daemon returned invalid JSON") from error
+        if "error" in response:
+            raise ToolkitCommandError(response["error"])
+        return response["result"]
 
 
 class SelectorResolver:
@@ -173,13 +247,21 @@ class WorkloadRunner:
         self._last_snapshot: dict[str, object] | None = None
 
     @classmethod
-    def from_environment(cls) -> "WorkloadRunner":
+    def from_environment(cls, toolkit: ToolkitClient | None = None) -> "WorkloadRunner":
         """Create a workload runner using the configured Flutter MCP CLI."""
 
-        return cls(ToolkitClient.from_environment(), SelectorResolver())
+        return cls(toolkit or ToolkitClient.from_environment(), SelectorResolver())
 
     def run(self, workload_path: Path, *, run_id: str) -> dict[str, object]:
         """Replay one workload with a fresh UUID and report completed steps."""
+
+        try:
+            return self._run(workload_path, run_id=run_id)
+        finally:
+            self._toolkit.close()
+
+    def _run(self, workload_path: Path, *, run_id: str) -> dict[str, object]:
+        """Replay one workload while its toolkit daemon remains connected."""
 
         workload = yaml.safe_load(workload_path.read_text())
         variables = self._variables(workload.get("variables", {}), run_id=run_id)

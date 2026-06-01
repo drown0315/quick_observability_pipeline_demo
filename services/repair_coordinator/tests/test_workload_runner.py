@@ -251,6 +251,35 @@ steps:
     ]
 
 
+def test_run_workload_retries_one_transient_toolkit_process_failure(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "repair-coordinator.db"
+    toolkit_path = tmp_path / "fake-flutter-mcp-toolkit"
+    capture_path = tmp_path / "toolkit-invocations.jsonl"
+    failure_marker_path = tmp_path / "transient-failure-marker"
+    workload_path = tmp_path / "transient_failure.hs.yaml"
+    write_fake_toolkit(toolkit_path)
+    workload_path.write_text("version: 1\nname: transient_failure\nsteps: []\n")
+
+    result = run_coordinator(
+        "run-workload",
+        str(workload_path),
+        "--run-id",
+        RUN_ID,
+        database_path=database_path,
+        extra_environment={
+            "FLUTTER_MCP_TOOLKIT_COMMAND": str(toolkit_path),
+            "FLUTTER_MCP_TOOLKIT_CAPTURE_PATH": str(capture_path),
+            "FLUTTER_MCP_TOOLKIT_TRANSIENT_FAILURE": "true",
+            "FLUTTER_MCP_TOOLKIT_FAILURE_MARKER_PATH": str(failure_marker_path),
+        },
+    )
+
+    assert result["status"] == "passed"
+    assert len(capture_path.read_text().splitlines()) == 1
+
+
 def run_coordinator(
     *arguments: str,
     database_path: Path,
@@ -288,58 +317,88 @@ import os
 from pathlib import Path
 import sys
 
-name = sys.argv[sys.argv.index("--name") + 1]
-arguments = json.loads(sys.argv[sys.argv.index("--args") + 1])
 capture_path = Path(os.environ["FLUTTER_MCP_TOOLKIT_CAPTURE_PATH"])
-with capture_path.open("a") as capture:
-    capture.write(json.dumps({"name": name, "arguments": arguments}) + "\\n")
+if sys.argv[1:] != ["serve"]:
+    raise SystemExit("expected serve mode")
 
-data = {}
-if name == "semantic_snapshot":
-    nodes = [
-        {
-            "ref": "s_2",
-            "label": "New Todo",
-            "type": "textField",
-            "actions": ["setText"],
-        },
-        {
-            "ref": "s_3",
-            "label": "Add",
-            "type": "button",
-            "actions": ["tap"],
-        },
-    ]
-    if os.environ.get("FLUTTER_MCP_TOOLKIT_AMBIGUOUS_ADD") == "true":
-        nodes.append(
+for line in sys.stdin:
+    request = json.loads(line)
+    if request["method"] == "initialize":
+        print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": {}}), flush=True)
+        continue
+    if request["method"] != "command/execute":
+        raise SystemExit(f"unsupported method: {request['method']}")
+
+    name = request["params"]["name"]
+    arguments = request["params"]["args"]
+    if os.environ.get("FLUTTER_MCP_TOOLKIT_TRANSIENT_FAILURE") == "true":
+        failure_marker = Path(os.environ["FLUTTER_MCP_TOOLKIT_FAILURE_MARKER_PATH"])
+        if not failure_marker.exists():
+            failure_marker.write_text("failed once")
+            raise SystemExit(1)
+    with capture_path.open("a") as capture:
+        capture.write(json.dumps({"name": name, "arguments": arguments}) + "\\n")
+
+    data = {}
+    if name == "semantic_snapshot":
+        nodes = [
             {
-                "ref": "s_4",
+                "ref": "s_2",
+                "label": "New Todo",
+                "type": "textField",
+                "actions": ["setText"],
+            },
+            {
+                "ref": "s_3",
                 "label": "Add",
                 "type": "button",
                 "actions": ["tap"],
-            }
+            },
+        ]
+        if os.environ.get("FLUTTER_MCP_TOOLKIT_AMBIGUOUS_ADD") == "true":
+            nodes.append(
+                {
+                    "ref": "s_4",
+                    "label": "Add",
+                    "type": "button",
+                    "actions": ["tap"],
+                }
+            )
+        data = {
+            "snapshot_id": 17,
+            "nodes": nodes,
+        }
+    if name == "get_app_errors":
+        data = {"errors": []}
+    if name == "wait_for" and os.environ.get("FLUTTER_MCP_TOOLKIT_TIMEOUT_WAIT") == "true":
+        print(
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": request["id"],
+                    "result": {
+                        "ok": False,
+                        "data": None,
+                        "error": {
+                            "code": "timeout",
+                            "message": "wait predicate did not match",
+                        },
+                    },
+                },
+            ),
+            flush=True,
         )
-    data = {
-        "snapshot_id": 17,
-        "nodes": nodes,
-    }
-if name == "get_app_errors":
-    data = {"errors": []}
-if name == "wait_for" and os.environ.get("FLUTTER_MCP_TOOLKIT_TIMEOUT_WAIT") == "true":
+        continue
     print(
         json.dumps(
             {
-                "ok": False,
-                "data": None,
-                "error": {
-                    "code": "timeout",
-                    "message": "wait predicate did not match",
-                },
+                "jsonrpc": "2.0",
+                "id": request["id"],
+                "result": {"ok": True, "data": data, "error": None},
             }
-        )
+        ),
+        flush=True,
     )
-    raise SystemExit(0)
-print(json.dumps({"ok": True, "data": data, "error": None}))
 """
     )
     toolkit_path.chmod(0o755)

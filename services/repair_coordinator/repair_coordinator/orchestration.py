@@ -7,7 +7,7 @@ from repair_coordinator.gateway import GatewayClient
 from repair_coordinator.pull_requests import PullRequestPublisher
 from repair_coordinator.restart import ComponentRestarter
 from repair_coordinator.tasks import RepairTaskStore
-from repair_coordinator.workloads import WorkloadRunner
+from repair_coordinator.workloads import ToolkitClient, WorkloadRunner
 from repair_coordinator.worktrees import WorktreeManager
 
 
@@ -38,14 +38,15 @@ class RepairOrchestrator:
     def from_environment(cls, store: RepairTaskStore) -> "RepairOrchestrator":
         """Create an orchestrator from local Coordinator configuration."""
 
+        toolkit = ToolkitClient.from_environment()
         return cls(
             store=store,
             gateway=GatewayClient.from_environment(),
             worktrees=WorktreeManager.from_environment(),
             codex=CodexRunner.from_environment(),
             change_guard=ChangeGuard(),
-            restarter=ComponentRestarter.from_environment(),
-            workloads=WorkloadRunner.from_environment(),
+            restarter=ComponentRestarter.from_environment(toolkit),
+            workloads=WorkloadRunner.from_environment(toolkit),
             pull_requests=PullRequestPublisher.from_environment(),
         )
 

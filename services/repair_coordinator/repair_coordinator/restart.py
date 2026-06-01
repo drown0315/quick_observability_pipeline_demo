@@ -20,11 +20,13 @@ class ComponentRestarter:
         self._flutter_launch_command = flutter_launch_command
 
     @classmethod
-    def from_environment(cls) -> "ComponentRestarter":
+    def from_environment(
+        cls, toolkit: ToolkitClient | None = None
+    ) -> "ComponentRestarter":
         """Create a restarter from local toolkit and Docker configuration."""
 
         return cls(
-            ToolkitClient.from_environment(),
+            toolkit or ToolkitClient.from_environment(),
             shlex.split(os.environ.get("REPAIR_DOCKER_COMMAND", "docker")),
             shlex.split(os.environ["REPAIR_FLUTTER_LAUNCH_COMMAND"])
             if "REPAIR_FLUTTER_LAUNCH_COMMAND" in os.environ
