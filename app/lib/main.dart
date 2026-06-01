@@ -1,10 +1,38 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:sentry_flutter/sentry_flutter.dart';
 
-void main() {
-  runApp(const TodoApp());
+const _appEnvironment = String.fromEnvironment(
+  'APP_ENVIRONMENT',
+  defaultValue: 'local',
+);
+const _appRelease = String.fromEnvironment(
+  'APP_RELEASE',
+  defaultValue: 'local',
+);
+const _sentryDsn = String.fromEnvironment('SENTRY_DSN');
+
+Future<void> main() async {
+  final sessionId = SentryId.newId().toString();
+  await SentryFlutter.init(
+    (options) {
+      options.dsn = _sentryDsn;
+      options.release = _appRelease;
+      options.environment = _appEnvironment;
+      options.sendDefaultPii = false;
+      options.enableLogs = false;
+    },
+    appRunner: () async {
+      await Sentry.configureScope((scope) async {
+        await scope.setUser(SentryUser(id: 'demo-user'));
+        await scope.setTag('session_id', sessionId);
+      });
+      runApp(const TodoApp());
+    },
+  );
 }
 
 class Todo {
@@ -95,6 +123,7 @@ class TodoApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Todo',
+      navigatorObservers: [SentryNavigatorObserver()],
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
       ),
@@ -185,7 +214,20 @@ class _TodoPageState extends State<TodoPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Todo')),
+      appBar: AppBar(
+        title: const Text('Todo'),
+        actions: [
+          if (kDebugMode)
+            IconButton(
+              key: const Key('trigger-client-exception'),
+              tooltip: 'Trigger temporary client exception',
+              onPressed: () {
+                throw StateError('temporary client exception');
+              },
+              icon: const Icon(Icons.bug_report),
+            ),
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(

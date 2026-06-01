@@ -25,6 +25,17 @@ void main() {
     expect(find.text('buy milk'), findsNothing);
     expect(repository.todos, isEmpty);
   });
+
+  testWidgets('user can manually trigger a temporary client exception', (
+    tester,
+  ) async {
+    await tester.pumpWidget(TodoApp(repository: MemoryTodoRepository()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('trigger-client-exception')));
+
+    expect(tester.takeException(), isA<StateError>());
+  });
 }
 
 class MemoryTodoRepository implements TodoRepository {

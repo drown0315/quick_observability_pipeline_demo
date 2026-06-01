@@ -1,6 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repository_root"
+
+if [[ ! -f .env ]]; then
+  echo "Missing .env. Copy .env.example and fill in the Sentry values." >&2
+  exit 1
+fi
+
+set -a
+source .env
+set +a
+
+for name in SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT; do
+  if [[ -z "${!name:-}" ]]; then
+    echo "Missing ${name} in .env" >&2
+    exit 1
+  fi
+done
+
 docker compose up -d --build
 
 wait_for_service() {
@@ -27,4 +46,4 @@ wait_for_service victoria-traces http://localhost:10428/-/healthy
 wait_for_service todo-api http://localhost:8000/health
 wait_for_service observability-gateway http://localhost:8001/health
 
-echo "Start the Flutter app with: (cd app && flutter run -d macos)"
+echo "Start the Flutter app with: ./scripts/run_flutter.sh"

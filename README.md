@@ -31,6 +31,16 @@ See [Prototype Scope](docs/PROTOTYPE-SCOPE.md) and
 
 ## Run Locally
 
+Create local Sentry configuration:
+
+```bash
+cp .env.example .env
+```
+
+Fill in the DSN for the Flutter App and a read-only `event:read` API token for
+the Gateway. The token is used only by the Gateway and is not passed to the
+Flutter process.
+
 Start the API container:
 
 ```bash
@@ -40,8 +50,7 @@ Start the API container:
 Start the macOS App in another terminal:
 
 ```bash
-cd app
-flutter run -d macos
+./scripts/run_flutter.sh
 ```
 
 Stop the backend without deleting persisted SQLite data:
@@ -50,11 +59,13 @@ Stop the backend without deleting persisted SQLite data:
 ./scripts/stop_local.sh
 ```
 
-Query bounded backend diagnostic evidence through the local Gateway:
+Query bounded backend and Flutter client diagnostic evidence through the local
+Gateway:
 
 ```bash
 ./scripts/diagnostics issues --since 15m
 ./scripts/diagnostics show backend:<uuid>
+./scripts/diagnostics show client:<sentry-group-id>
 ```
 
 ## Test
