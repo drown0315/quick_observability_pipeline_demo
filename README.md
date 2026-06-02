@@ -2,10 +2,11 @@
 
 This is a local-first demo for an automated Codex repair loop.
 
-The demo app is a Flutter macOS Todo App backed by FastAPI and SQLite. It
-includes a small script that clicks through the app and intentionally triggers a
-bug. When that bug happens, the observability stack captures the failure
-evidence and a local repair process asks Codex to fix the product code.
+The demo app is a Flutter Todo App backed by FastAPI and SQLite. The current
+demo has only been tested by running the Flutter app on macOS. The app includes
+a small script that clicks through the UI and intentionally triggers a bug. When
+that bug happens, the observability stack captures the failure evidence and a
+local repair process asks Codex to fix the product code.
 
 ## Demo Flow
 
@@ -73,6 +74,9 @@ The automatic repair loop works like this:
    Coordinator creates a pull request for the repair.
 
 ## Run Automatic Repair
+
+These commands use the Flutter macOS desktop target. That is the only demo
+runtime tested so far.
 
 Create local configuration:
 
