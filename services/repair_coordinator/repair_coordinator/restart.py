@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import shlex
 import subprocess
 import time
@@ -13,10 +14,12 @@ class ComponentRestarter:
         self,
         toolkit: ToolkitClient,
         docker_command: list[str],
+        compose_env_file: Path,
         flutter_launch_command: list[str] | None,
     ) -> None:
         self._toolkit = toolkit
         self._docker_command = docker_command
+        self._compose_env_file = compose_env_file
         self._flutter_launch_command = flutter_launch_command
 
     @classmethod
@@ -28,6 +31,12 @@ class ComponentRestarter:
         return cls(
             toolkit or ToolkitClient.from_environment(),
             shlex.split(os.environ.get("REPAIR_DOCKER_COMMAND", "docker")),
+            Path(
+                os.environ.get(
+                    "REPAIR_COMPOSE_ENV_FILE",
+                    str(Path(os.environ["REPAIR_REPOSITORY_ROOT"]) / ".env"),
+                )
+            ),
             shlex.split(os.environ["REPAIR_FLUTTER_LAUNCH_COMMAND"])
             if "REPAIR_FLUTTER_LAUNCH_COMMAND" in os.environ
             else None,
@@ -38,7 +47,16 @@ class ComponentRestarter:
 
         if any(path.startswith("services/todo_api/") for path in changed_paths):
             subprocess.run(
-                [*self._docker_command, "compose", "up", "-d", "--build", "todo-api"],
+                [
+                    *self._docker_command,
+                    "compose",
+                    "--env-file",
+                    str(self._compose_env_file),
+                    "up",
+                    "-d",
+                    "--build",
+                    "todo-api",
+                ],
                 check=True,
                 cwd=str(task["worktree_path"]),
             )
