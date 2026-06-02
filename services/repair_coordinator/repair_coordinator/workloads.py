@@ -5,6 +5,7 @@ import shlex
 from string import Template
 import subprocess
 from datetime import datetime, timezone
+from typing import Callable
 
 import yaml
 
@@ -252,19 +253,38 @@ class WorkloadRunner:
 
         return cls(toolkit or ToolkitClient.from_environment(), SelectorResolver())
 
-    def run(self, workload_path: Path, *, run_id: str) -> dict[str, object]:
+    def run(
+        self,
+        workload_path: Path,
+        *,
+        run_id: str,
+        progress: Callable[[str], None] | None = None,
+    ) -> dict[str, object]:
         """Replay one workload with a fresh UUID and report completed steps."""
 
         try:
-            return self._run(workload_path, run_id=run_id)
+            return self._run(workload_path, run_id=run_id, progress=progress)
         finally:
             self._toolkit.close()
 
-    def _run(self, workload_path: Path, *, run_id: str) -> dict[str, object]:
+    def _run(
+        self,
+        workload_path: Path,
+        *,
+        run_id: str,
+        progress: Callable[[str], None] | None,
+    ) -> dict[str, object]:
         """Replay one workload while its toolkit daemon remains connected."""
 
         workload = yaml.safe_load(workload_path.read_text())
+        steps = workload["steps"]
+        self._report(
+            progress,
+            f"workload {workload['name']} starting with {len(steps)} steps "
+            f"(run_id={run_id})",
+        )
         variables = self._variables(workload.get("variables", {}), run_id=run_id)
+        self._report(progress, "setting Flutter workload run id")
         self._toolkit.execute(
             "fmt_client_tool",
             {
@@ -273,11 +293,19 @@ class WorkloadRunner:
             },
         )
         completed_steps = 0
-        for index, raw_step in enumerate(workload["steps"]):
+        for index, raw_step in enumerate(steps):
             step = self._expand(raw_step, variables)
+            self._report(
+                progress,
+                f"step {index + 1}/{len(steps)}: {self._describe_step(step)}",
+            )
             try:
                 self._run_step(step)
             except (SelectorResolutionError, ToolkitCommandError) as error:
+                self._report(
+                    progress,
+                    f"step {index + 1}/{len(steps)} failed: {error}",
+                )
                 return {
                     "name": workload["name"],
                     "run_id": run_id,
@@ -290,6 +318,11 @@ class WorkloadRunner:
                     "app_errors": self._app_errors_or_none(),
                 }
             completed_steps += 1
+            self._report(
+                progress,
+                f"step {index + 1}/{len(steps)} completed",
+            )
+        self._report(progress, f"workload {workload['name']} passed")
         return {
             "name": workload["name"],
             "run_id": run_id,
@@ -357,3 +390,21 @@ class WorkloadRunner:
         if isinstance(value, dict):
             return {key: cls._expand(item, variables) for key, item in value.items()}
         return value
+
+    @staticmethod
+    def _describe_step(step: dict[str, object]) -> str:
+        action = str(step["action"])
+        if action == "wait_for":
+            predicate = step["predicate"]
+            return f"wait_for {predicate}"
+        selector = step["selector"]
+        if action == "enter_text":
+            return f"enter_text into {selector}"
+        if action == "tap":
+            return f"tap {selector}"
+        return action
+
+    @staticmethod
+    def _report(progress: Callable[[str], None] | None, message: str) -> None:
+        if progress is not None:
+            progress(message)

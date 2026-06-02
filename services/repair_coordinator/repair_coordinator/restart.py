@@ -3,6 +3,7 @@ from pathlib import Path
 import shlex
 import subprocess
 import time
+from typing import Callable
 
 from repair_coordinator.workloads import ToolkitClient
 
@@ -17,16 +18,20 @@ class ComponentRestarter:
         compose_project_name: str,
         compose_env_file: Path,
         flutter_launch_command: list[str] | None,
+        progress: Callable[[str], None] | None = None,
     ) -> None:
         self._toolkit = toolkit
         self._docker_command = docker_command
         self._compose_project_name = compose_project_name
         self._compose_env_file = compose_env_file
         self._flutter_launch_command = flutter_launch_command
+        self._progress = progress
 
     @classmethod
     def from_environment(
-        cls, toolkit: ToolkitClient | None = None
+        cls,
+        toolkit: ToolkitClient | None = None,
+        progress: Callable[[str], None] | None = None,
     ) -> "ComponentRestarter":
         """Create a restarter from local toolkit and Docker configuration."""
 
@@ -44,12 +49,14 @@ class ComponentRestarter:
             shlex.split(os.environ["REPAIR_FLUTTER_LAUNCH_COMMAND"])
             if "REPAIR_FLUTTER_LAUNCH_COMMAND" in os.environ
             else None,
+            progress=progress,
         )
 
     def restart(self, task: dict[str, object], changed_paths: list[str]) -> None:
         """Restart only the Flutter App or Todo API changed by one repair."""
 
         if any(path.startswith("services/todo_api/") for path in changed_paths):
+            self._report("rebuilding and restarting todo-api")
             subprocess.run(
                 [
                     *self._docker_command,
@@ -67,12 +74,15 @@ class ComponentRestarter:
                 check=True,
                 cwd=str(task["worktree_path"]),
             )
+            self._report("todo-api restart completed")
         if any(path.startswith("app/lib/") for path in changed_paths):
             if self._flutter_launch_command is None:
                 raise ValueError(
                     "Flutter repair validation requires REPAIR_FLUTTER_LAUNCH_COMMAND"
                 )
+            self._report("discovering current Flutter debug targets")
             previous_target_ids = self._discover_target_ids()
+            self._report("launching Flutter App from repair worktree")
             subprocess.Popen(
                 [*self._flutter_launch_command, str(task["worktree_path"])],
                 cwd=str(task["worktree_path"]),
@@ -81,13 +91,16 @@ class ComponentRestarter:
                 stderr=subprocess.DEVNULL,
             )
             self._wait_for_flutter_target(previous_target_ids)
+            self._report("hot restarting Flutter App")
             self._toolkit.execute("hot_restart_flutter", {})
+            self._report("Flutter restart completed")
 
     def _wait_for_flutter_target(self, previous_target_ids: set[str]) -> None:
         """Wait until the toolkit discovers the relaunched Flutter debug App."""
 
         for _ in range(60):
             if self._discover_target_ids() - previous_target_ids:
+                self._report("new Flutter debug target discovered")
                 return
             time.sleep(0.5)
         raise TimeoutError("Flutter debug App was not discoverable after relaunch")
@@ -101,3 +114,7 @@ class ComponentRestarter:
             for target in result.get("targets", [])
             if "targetId" in target
         }
+
+    def _report(self, message: str) -> None:
+        if self._progress is not None:
+            self._progress(message)

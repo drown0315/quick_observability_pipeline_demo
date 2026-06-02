@@ -2,7 +2,9 @@ import argparse
 import json
 import os
 from pathlib import Path
+import sys
 import time
+from typing import Callable
 
 from repair_coordinator.changes import ChangeGuard
 from repair_coordinator.codex import CodexRunner
@@ -88,7 +90,9 @@ def main() -> int:
     args = build_parser().parse_args()
     if args.command == "run-workload":
         value = WorkloadRunner.from_environment().run(
-            args.workload_path, run_id=args.run_id
+            args.workload_path,
+            run_id=args.run_id,
+            progress=report_progress,
         )
         print(json.dumps(value))
         return 0
@@ -104,6 +108,7 @@ def main() -> int:
                 args.workload,
                 store,
                 verbose=args.verbose,
+                progress=report_progress,
             )
         elif args.command == "claim-next":
             value = store.claim_next()
@@ -128,7 +133,7 @@ def main() -> int:
             store.record_pr(args.task_id, pr_url=str(value["pr_url"]))
         elif args.command == "process-next":
             value = RepairOrchestrator.from_environment(
-                store, verbose=args.verbose
+                store, verbose=args.verbose, progress=report_progress
             ).process_next(
                 workload_path=args.workload
             )
@@ -148,6 +153,7 @@ def run(
     store: RepairTaskStore,
     *,
     verbose: bool = False,
+    progress: Callable[[str], None] | None = None,
 ) -> dict[str, int]:
     """Poll the Gateway repeatedly and return cumulative discovery counts.
 
@@ -171,27 +177,62 @@ def run(
         calls.
     """
 
+    report(progress, "repair coordinator starting")
     gateway = GatewayClient.from_environment()
     totals: dict[str, object] = {"polls": 0, "created": 0, "seen": 0}
     orchestrator = (
-        RepairOrchestrator.from_environment(store, verbose=verbose)
+        RepairOrchestrator.from_environment(
+            store,
+            verbose=verbose,
+            progress=progress,
+        )
         if workload_path is not None
         else None
     )
     if orchestrator is not None:
         totals["processed"] = []
+        report(progress, f"validation workload: {workload_path}")
+    if max_polls is None:
+        report(progress, f"polling every {interval_seconds:g}s until interrupted")
+    else:
+        report(
+            progress,
+            f"polling every {interval_seconds:g}s for {max_polls} poll(s)",
+        )
     while max_polls is None or totals["polls"] < max_polls:
+        report(progress, f"poll {totals['polls'] + 1}: querying diagnostics gateway")
         result = poll_once(gateway, store)
         totals["polls"] += 1
         totals["created"] += result["created"]
         totals["seen"] += result["seen"]
+        report(
+            progress,
+            f"poll {totals['polls']}: saw {result['seen']} issue(s), "
+            f"queued {result['created']} new task(s)",
+        )
         if orchestrator is not None:
             processed = orchestrator.process_next(workload_path=workload_path)
             if processed is not None:
                 totals["processed"].append(processed)
+            else:
+                report(progress, "no queued repair task to process")
         if max_polls is None or totals["polls"] < max_polls:
+            report(progress, f"sleeping {interval_seconds:g}s before next poll")
             time.sleep(interval_seconds)
     return totals
+
+
+def report_progress(message: str) -> None:
+    """Print one progress line without contaminating the JSON stdout stream."""
+
+    print(f"[repair-coordinator] {message}", file=sys.stderr, flush=True)
+
+
+def report(progress: Callable[[str], None] | None, message: str) -> None:
+    """Call one optional progress sink."""
+
+    if progress is not None:
+        progress(message)
 
 
 if __name__ == "__main__":
