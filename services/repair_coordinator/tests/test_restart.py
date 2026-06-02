@@ -35,11 +35,14 @@ def test_restart_todo_api_uses_repository_env_file(tmp_path: Path) -> None:
     assert invocation == {
         "arguments": [
             "compose",
+            "--project-name",
+            "repository",
             "--env-file",
             str(repository_path / ".env"),
             "up",
             "-d",
             "--build",
+            "--no-deps",
             "todo-api",
         ],
         "cwd": str(worktree_path),

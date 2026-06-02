@@ -14,11 +14,13 @@ class ComponentRestarter:
         self,
         toolkit: ToolkitClient,
         docker_command: list[str],
+        compose_project_name: str,
         compose_env_file: Path,
         flutter_launch_command: list[str] | None,
     ) -> None:
         self._toolkit = toolkit
         self._docker_command = docker_command
+        self._compose_project_name = compose_project_name
         self._compose_env_file = compose_env_file
         self._flutter_launch_command = flutter_launch_command
 
@@ -28,13 +30,15 @@ class ComponentRestarter:
     ) -> "ComponentRestarter":
         """Create a restarter from local toolkit and Docker configuration."""
 
+        repository_root = Path(os.environ["REPAIR_REPOSITORY_ROOT"])
         return cls(
             toolkit or ToolkitClient.from_environment(),
             shlex.split(os.environ.get("REPAIR_DOCKER_COMMAND", "docker")),
+            os.environ.get("REPAIR_COMPOSE_PROJECT_NAME", repository_root.name),
             Path(
                 os.environ.get(
                     "REPAIR_COMPOSE_ENV_FILE",
-                    str(Path(os.environ["REPAIR_REPOSITORY_ROOT"]) / ".env"),
+                    str(repository_root / ".env"),
                 )
             ),
             shlex.split(os.environ["REPAIR_FLUTTER_LAUNCH_COMMAND"])
@@ -50,11 +54,14 @@ class ComponentRestarter:
                 [
                     *self._docker_command,
                     "compose",
+                    "--project-name",
+                    self._compose_project_name,
                     "--env-file",
                     str(self._compose_env_file),
                     "up",
                     "-d",
                     "--build",
+                    "--no-deps",
                     "todo-api",
                 ],
                 check=True,
