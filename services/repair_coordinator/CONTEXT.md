@@ -60,5 +60,8 @@ The normal loop is:
 - Repository/worktrees: `REPAIR_REPOSITORY_ROOT`, `REPAIR_WORKTREE_ROOT`
 - Tooling commands: `REPAIR_CODEX_COMMAND`, `FLUTTER_MCP_TOOLKIT_COMMAND`,
   `REPAIR_DOCKER_COMMAND`, `REPAIR_GH_COMMAND`
+- Codex permissions: `REPAIR_CODEX_SANDBOX` selects the sandbox passed to
+  `codex exec`. The demo runner defaults it to `danger-full-access` so Codex can
+  query the local Diagnostics Gateway from inside repair worktrees.
 - Restart options: `REPAIR_COMPOSE_PROJECT_NAME`, `REPAIR_COMPOSE_ENV_FILE`,
   `REPAIR_FLUTTER_LAUNCH_COMMAND`

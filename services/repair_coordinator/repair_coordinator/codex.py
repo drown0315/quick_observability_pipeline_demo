@@ -17,8 +17,15 @@ class CodexRunner:
         Invoking task `1` runs `codex exec` against its prepared worktree.
     """
 
-    def __init__(self, command: list[str], *, verbose: bool = False) -> None:
+    def __init__(
+        self,
+        command: list[str],
+        *,
+        sandbox: str = "workspace-write",
+        verbose: bool = False,
+    ) -> None:
         self._command = command
+        self._sandbox = sandbox
         self._verbose = verbose
 
     @classmethod
@@ -27,6 +34,7 @@ class CodexRunner:
 
         return cls(
             shlex.split(os.environ.get("REPAIR_CODEX_COMMAND", "codex")),
+            sandbox=os.environ.get("REPAIR_CODEX_SANDBOX", "workspace-write"),
             verbose=verbose,
         )
 
@@ -60,7 +68,7 @@ class CodexRunner:
             "-C",
             str(worktree_path),
             "--sandbox",
-            "workspace-write",
+            self._sandbox,
             self._prompt(issue_id=str(task["issue_id"]), attempt=attempt),
         ]
         result = (
