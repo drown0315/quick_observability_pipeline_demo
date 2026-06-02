@@ -295,8 +295,11 @@ class _TodoPageState extends State<TodoPage> {
     });
   }
 
-  Future<void> _setCompleted(Todo todo, bool completed) async {
-    await _perform(() async {
+  Future<void> _setCompleted(Todo todo, bool completed) {
+    if (todo.title.contains('mobile-crash')) {
+      throw StateError('todo completion failed');
+    }
+    return _perform(() async {
       final updated = await widget.repository.setCompleted(todo.id, completed);
       _todos = [
         for (final current in _todos)

@@ -38,6 +38,23 @@ void main() {
 
     expect(tester.takeException(), isA<StateError>());
   });
+
+  testWidgets('completing a mobile-crash Todo raises an uncaught exception', (
+    tester,
+  ) async {
+    await tester.pumpWidget(TodoApp(repository: MemoryTodoRepository()));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('new-todo-title')),
+      'mobile-crash-demo',
+    );
+    await tester.tap(find.byKey(const Key('add-todo')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(Checkbox));
+
+    expect(tester.takeException(), isA<StateError>());
+  });
 }
 
 class MemoryTodoRepository implements TodoRepository {
