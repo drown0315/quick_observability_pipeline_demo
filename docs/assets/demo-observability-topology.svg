@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="620" viewBox="0 0 1120 620" role="img" aria-labelledby="title desc">
+  <title id="title">Demo observability topology</title>
+  <desc id="desc">A diagram showing the actual demo topology: Flutter App sends client errors to Sentry and HTTP requests to FastAPI; FastAPI sends telemetry through OpenTelemetry Collector to Victoria services; the Gateway queries Sentry and Victoria for Codex.</desc>
+  <defs>
+    <pattern id="dots" width="8" height="8" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="1" fill="#d8dee9"/>
+    </pattern>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#2f5fb3"/>
+    </marker>
+    <marker id="green-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#3b9b35"/>
+    </marker>
+  </defs>
+
+  <rect width="1120" height="620" fill="#ffffff"/>
+  <text x="42" y="54" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700" fill="#111827">This demo: Sentry + Victoria behind one Gateway</text>
+
+  <rect x="52" y="174" width="150" height="88" rx="22" fill="url(#dots)" stroke="#111827" stroke-width="2"/>
+  <text x="127" y="212" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="800" fill="#111827">Flutter</text>
+  <text x="127" y="236" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="800" fill="#111827">Todo App</text>
+
+  <rect x="312" y="96" width="150" height="74" rx="22" fill="#ffffff" stroke="#111827" stroke-width="2"/>
+  <text x="387" y="140" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="800" fill="#111827">Sentry SaaS</text>
+
+  <rect x="312" y="250" width="150" height="84" rx="22" fill="#ffffff" stroke="#111827" stroke-width="2"/>
+  <text x="387" y="286" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="800" fill="#111827">FastAPI</text>
+  <text x="387" y="310" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="16" fill="#111827">+ SQLite</text>
+
+  <rect x="312" y="414" width="150" height="76" rx="26" fill="#ffffff" stroke="#111827" stroke-width="2"/>
+  <text x="387" y="458" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="800" fill="#111827">OTel Collector</text>
+
+  <path d="M202 206 C250 206 248 132 312 132" fill="none" stroke="#2f5fb3" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="250" y="132" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="14" fill="#111827">client errors</text>
+
+  <line x1="202" y1="236" x2="312" y2="292" stroke="#111827" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="245" y="286" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="14" fill="#111827">HTTP API</text>
+
+  <line x1="387" y1="334" x2="387" y2="414" stroke="#111827" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="466" y="378" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="14" fill="#111827">logs / metrics / traces</text>
+
+  <rect x="560" y="204" width="310" height="310" rx="10" fill="url(#dots)" stroke="#111827" stroke-width="2"/>
+  <text x="596" y="242" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="800" fill="#111827">Victoria stack</text>
+
+  <rect x="610" y="278" width="146" height="54" rx="27" fill="#ffffff" stroke="#111827" stroke-width="2"/>
+  <text x="683" y="311" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="800" fill="#111827">Victoria Logs</text>
+
+  <rect x="610" y="354" width="146" height="54" rx="27" fill="#ffffff" stroke="#111827" stroke-width="2"/>
+  <text x="683" y="387" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="800" fill="#111827">Victoria Metrics</text>
+
+  <rect x="610" y="430" width="146" height="54" rx="27" fill="#ffffff" stroke="#111827" stroke-width="2"/>
+  <text x="683" y="463" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="800" fill="#111827">Victoria Traces</text>
+
+  <path d="M462 452 C522 452 524 305 610 305" fill="none" stroke="#111827" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M462 452 C522 452 524 381 610 381" fill="none" stroke="#111827" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M462 452 C522 452 524 457 610 457" fill="none" stroke="#111827" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <rect x="930" y="248" width="138" height="86" rx="22" fill="#ffffff" stroke="#2f5fb3" stroke-width="2.5"/>
+  <text x="999" y="284" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="800" fill="#111827">Gateway</text>
+  <text x="999" y="308" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="13" fill="#111827">one diagnostics API</text>
+
+  <path d="M462 132 C710 132 760 160 930 268" fill="none" stroke="#2f5fb3" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="720" y="128" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="14" fill="#111827">client issue evidence</text>
+
+  <path d="M870 360 C902 360 900 310 930 310" fill="none" stroke="#2f5fb3" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="846" y="390" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="14" fill="#111827">backend evidence</text>
+
+  <rect x="930" y="422" width="138" height="76" rx="22" fill="url(#dots)" stroke="#3b9b35" stroke-width="2.5"/>
+  <text x="999" y="467" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="800" fill="#111827">Codex</text>
+
+  <line x1="999" y1="334" x2="999" y2="422" stroke="#3b9b35" stroke-width="2.5" marker-end="url(#green-arrow)"/>
+  <text x="1060" y="382" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="14" fill="#3b9b35">bounded evidence</text>
+
+  <path d="M930 460 C830 560 302 560 202 236" fill="none" stroke="#3b9b35" stroke-width="2.5" marker-end="url(#green-arrow)"/>
+  <text x="612" y="570" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="700" fill="#3b9b35">repair, restart, replay the same UI workload</text>
+</svg>

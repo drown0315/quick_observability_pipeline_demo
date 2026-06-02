@@ -1,106 +1,129 @@
 # Quick Observability Pipeline Demo
 
-A validation prototype for an automated Codex repair loop. A Flutter macOS Todo
-App and its FastAPI backend emit diagnostic signals, Codex queries a single
-local diagnostics entry point, repairs product code, and replays the same UI
-journey to verify the fix.
+This is a local-first demo for an automated Codex repair loop.
 
-## Architecture
+The demo app is a Flutter macOS Todo App backed by FastAPI and SQLite. It
+includes a small script that clicks through the app and intentionally triggers a
+bug. When that bug happens, the observability stack captures the failure
+evidence and a local repair process asks Codex to fix the product code.
 
-```text
-Flutter macOS App -> Sentry SaaS
-Flutter macOS App -> FastAPI + SQLite
-FastAPI -> OpenTelemetry Collector
-        -> VictoriaLogs / VictoriaTraces / VictoriaMetrics
-Codex -> diagnostics CLI -> Observability Gateway -> Sentry and Victoria APIs
-Repair Coordinator -> Observability Gateway -> Codex -> validated pull request
-```
+## Demo Flow
 
-The first version is intentionally local-first. It validates two escaped-bug
-scenarios: an unexpected backend deletion failure and an unexpected Flutter
-completion failure. UI journeys are driven through Flutter MCP tooling so the
-feedback loop exercises real user behavior rather than direct API shortcuts.
+This demo intentionally includes deterministic escaped bugs:
 
-## Status
+- Deleting a Todo whose title contains `crash` raises a backend
+  `RuntimeError("todo deletion failed")`.
+- Completing a Todo whose title contains `mobile-crash` raises a Flutter
+  `StateError("todo completion failed")`.
 
-The first Todo CRUD slice is implemented. It includes a Flutter macOS App,
-FastAPI service, SQLite storage, and Docker Compose volume for local
-persistence. Further observability work is tracked as GitHub issues.
+The click-through script creates normal Todos first, then creates a Todo named
+`backend-crash-<run_id>` and tries to delete it. That action triggers the
+backend issue. The point of the demo is that Codex sees the failure through
+logs, traces, metrics, and error events instead of a hard-coded test
+expectation.
 
-See [Prototype Scope](docs/PROTOTYPE-SCOPE.md) and
-[ADR 0001](docs/adr/0001-hybrid-observability-pipeline.md). Use
-[Repair Coordinator Acceptance](docs/REPAIR-COORDINATOR-ACCEPTANCE.md) for the
-local repair-loop validation steps and current Flutter client TODO.
+### Concept
 
-## Run Locally
+The original idea is to give Codex a queryable observability stack. Codex does
+not guess from a failed UI alone; it queries logs, metrics, and traces, repairs
+the codebase, restarts the app, and re-runs the same scripted app interaction.
 
-Create local Sentry configuration:
+![Codex automatic repair loop concept](docs/assets/codex-auto-repair-loop.svg)
+
+### This Demo
+
+This repository uses a hybrid stack. The Flutter App sends client exceptions to
+Sentry. The FastAPI backend sends logs, metrics, and traces through the
+OpenTelemetry Collector into Victoria services. The Observability Gateway reads
+both Sentry and Victoria and exposes one diagnostics API to Codex.
+
+The Flutter App does not send logs, metrics, or traces directly into the
+Victoria stack. It reaches that stack indirectly by calling the FastAPI backend,
+which emits backend telemetry.
+
+![Demo observability topology](docs/assets/demo-observability-topology.svg)
+
+The demo has three local helpers:
+
+- **Click-through script**: a saved set of Flutter App actions, such as typing a
+  Todo title, pressing Add, and pressing Delete. In the code this is called a
+  workload.
+- **Diagnostics Gateway**: a read-only local API that gathers the relevant
+  Sentry and Victoria evidence for Codex.
+- **Repair Coordinator**: a local repair process that watches for new issues,
+  starts Codex, validates the repair, and opens a pull request.
+
+The automatic repair loop works like this:
+
+1. Start the backend services and the Flutter App.
+2. Start the Repair Coordinator. It checks the Diagnostics Gateway for recent
+   failures.
+3. Run the click-through script. It creates a Todo that triggers the injected
+   backend crash.
+4. The Flutter App and FastAPI backend emit diagnostic signals.
+5. The Diagnostics Gateway collects the relevant Sentry event, backend logs,
+   traces, and metrics into a small evidence bundle.
+6. The Repair Coordinator creates a repair branch and starts Codex on that
+   branch.
+7. Codex reads the evidence, finds the product bug, and edits the app or API
+   code.
+8. The Repair Coordinator restarts the changed component and runs the same
+   click-through script again.
+9. If the scripted app interaction now passes and no new issue appears, the
+   Coordinator creates a pull request for the repair.
+
+## Run Automatic Repair
+
+Create local configuration:
 
 ```bash
 cp .env.example .env
 ```
 
 Fill in the DSN for the Flutter App and a read-only `event:read` API token for
-the Gateway. The token is used only by the Gateway and is not passed to the
-Flutter process.
+the Diagnostics Gateway. The token is used only by that local diagnostics
+service and is not passed to the Flutter process.
 
-Start the API container:
+Terminal 1: start the backend, Diagnostics Gateway, and observability services.
 
 ```bash
 ./scripts/start_local.sh
 ```
 
-Start the macOS App in another terminal:
+Terminal 2: start the Flutter macOS App.
 
 ```bash
 ./scripts/run_flutter.sh
 ```
 
-Start the local Repair Coordinator in another terminal. It polls the Gateway,
-runs one repair task at a time in an isolated worktree, strictly replays the
-reviewed mixed UI workload, relaunches repaired Flutter code from that
-worktree, and creates a pull request after validation passes:
-
-```bash
-./scripts/run_repair_coordinator.sh
-```
-
-Add `--verbose` to stream Codex stdout and stderr while each repair attempt
-runs:
+Terminal 3: start the Repair Coordinator. This is the local repair process that
+watches for failures, runs Codex, validates the fix, and creates a pull
+request.
 
 ```bash
 ./scripts/run_repair_coordinator.sh --verbose
 ```
 
-Stop the backend without deleting persisted SQLite data:
+Terminal 4: trigger the injected issue by running the click-through script.
 
 ```bash
+RUN_ID="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+cd services/repair_coordinator
+uv run python -m repair_coordinator run-workload \
+  ../../harness/mixed_user_workload.hs.yaml \
+  --run-id "$RUN_ID"
+```
+
+Stop the local stack when finished.
+
+```bash
+cd ../..
 ./scripts/stop_local.sh
 ```
 
-Query bounded backend and Flutter client diagnostic evidence through the local
-Gateway:
+## More Detail
 
-```bash
-./scripts/diagnostics issues --since 15m
-./scripts/diagnostics show backend:<uuid>
-./scripts/diagnostics show client:<sentry-group-id>
-```
-
-## Test
-
-```bash
-cd services/todo_api
-uv run --group dev pytest
-
-cd ../observability_gateway
-uv run --group dev pytest
-
-cd ../repair_coordinator
-uv run --group dev pytest
-
-cd ../../app
-flutter analyze
-flutter test
-flutter build macos --debug
-```
+- [Prototype Scope](docs/PROTOTYPE-SCOPE.md)
+- [Repair Coordinator Acceptance](docs/REPAIR-COORDINATOR-ACCEPTANCE.md)
+- [ADR 0001: Hybrid Observability Pipeline](docs/adr/0001-hybrid-observability-pipeline.md)
+- [ADR 0002: Poll Gateway for Local Repair Tasks](docs/adr/0002-poll-gateway-for-local-repair-tasks.md)
