@@ -196,6 +196,43 @@ def test_prepare_worktree_creates_isolated_repair_branch(
     )
 
 
+def test_prepare_worktree_uses_suffix_when_repair_branch_exists(
+    gateway_url: str, tmp_path: Path
+) -> None:
+    database_path = tmp_path / "repair-coordinator.db"
+    repository_path = tmp_path / "repository"
+    worktree_root = tmp_path / "worktrees"
+    initialize_git_repository(repository_path)
+    subprocess.run(
+        ["git", "branch", "codex/repair-1"],
+        check=True,
+        cwd=repository_path,
+    )
+    run_coordinator(
+        "poll-once", gateway_url=gateway_url, database_path=database_path
+    )
+    run_coordinator(
+        "claim-next", gateway_url=gateway_url, database_path=database_path
+    )
+
+    prepared = run_coordinator(
+        "prepare-worktree",
+        "1",
+        gateway_url=gateway_url,
+        database_path=database_path,
+        extra_environment={
+            "REPAIR_REPOSITORY_ROOT": str(repository_path),
+            "REPAIR_WORKTREE_ROOT": str(worktree_root),
+        },
+    )
+
+    assert prepared == {
+        "task_id": 1,
+        "branch": "codex/repair-1-2",
+        "worktree_path": str(worktree_root / "repair-1-2"),
+    }
+
+
 def test_invoke_codex_runs_repair_prompt_for_prepared_task(
     gateway_url: str, tmp_path: Path
 ) -> None:
@@ -259,6 +296,52 @@ def test_invoke_codex_runs_repair_prompt_for_prepared_task(
     assert "app/lib/" in prompt
     assert "services/todo_api/" in prompt
     assert "harness/" in prompt
+
+
+def test_invoke_codex_uses_configured_sandbox(
+    gateway_url: str, tmp_path: Path
+) -> None:
+    database_path = tmp_path / "repair-coordinator.db"
+    repository_path = tmp_path / "repository"
+    worktree_root = tmp_path / "worktrees"
+    capture_path = tmp_path / "codex-invocation.json"
+    codex_path = tmp_path / "fake-codex"
+    initialize_git_repository(repository_path)
+    write_fake_codex(codex_path)
+    environment = {
+        "REPAIR_REPOSITORY_ROOT": str(repository_path),
+        "REPAIR_WORKTREE_ROOT": str(worktree_root),
+        "REPAIR_CODEX_COMMAND": str(codex_path),
+        "REPAIR_CODEX_CAPTURE_PATH": str(capture_path),
+        "REPAIR_CODEX_SANDBOX": "danger-full-access",
+    }
+    run_coordinator(
+        "poll-once", gateway_url=gateway_url, database_path=database_path
+    )
+    run_coordinator(
+        "claim-next", gateway_url=gateway_url, database_path=database_path
+    )
+    run_coordinator(
+        "prepare-worktree",
+        "1",
+        gateway_url=gateway_url,
+        database_path=database_path,
+        extra_environment=environment,
+    )
+
+    run_coordinator(
+        "invoke-codex",
+        "1",
+        "--attempt",
+        "1",
+        gateway_url=gateway_url,
+        database_path=database_path,
+        extra_environment=environment,
+    )
+    invocation = json.loads(capture_path.read_text())
+
+    sandbox_index = invocation["arguments"].index("--sandbox")
+    assert invocation["arguments"][sandbox_index + 1] == "danger-full-access"
 
 
 def test_verbose_codex_invocation_streams_and_retains_output(
