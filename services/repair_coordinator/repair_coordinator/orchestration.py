@@ -71,6 +71,7 @@ class RepairOrchestrator:
                 "attempt": attempt,
                 "codex_returncode": codex_result["returncode"],
                 "codex_output": codex_result["output"],
+                "codex_error_output": codex_result["error_output"],
                 "changes": changes,
             }
             if not changes["valid"] or not changes["changed_paths"]:

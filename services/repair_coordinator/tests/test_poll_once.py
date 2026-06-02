@@ -223,16 +223,17 @@ def test_invoke_codex_runs_repair_prompt_for_prepared_task(
         "attempt": 1,
         "returncode": 0,
         "output": "repair proposed\n",
+        "error_output": "",
     }
-    assert invocation["arguments"][:6] == [
+    assert invocation["arguments"][:7] == [
+        "--ask-for-approval",
+        "never",
         "exec",
         "-C",
         str(worktree_root / "repair-1"),
         "--sandbox",
         "workspace-write",
-        "--ask-for-approval",
     ]
-    assert invocation["arguments"][6] == "never"
     prompt = invocation["arguments"][7]
     assert "client:123" in prompt
     assert "scripts/diagnostics" in prompt

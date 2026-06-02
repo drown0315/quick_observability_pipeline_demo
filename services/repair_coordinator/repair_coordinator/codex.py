@@ -46,13 +46,13 @@ class CodexRunner:
         result = subprocess.run(
             [
                 *self._command,
+                "--ask-for-approval",
+                "never",
                 "exec",
                 "-C",
                 str(worktree_path),
                 "--sandbox",
                 "workspace-write",
-                "--ask-for-approval",
-                "never",
                 self._prompt(issue_id=str(task["issue_id"]), attempt=attempt),
             ],
             check=False,
@@ -65,6 +65,7 @@ class CodexRunner:
             "attempt": attempt,
             "returncode": result.returncode,
             "output": result.stdout,
+            "error_output": result.stderr,
         }
 
     @staticmethod
