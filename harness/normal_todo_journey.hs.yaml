@@ -3,10 +3,6 @@ name: normal_todo_journey
 variables:
   todo_title: normal-todo-${run_id}
 steps:
-  - action: wait_for
-    predicate:
-      kind: stable
-      stableWindowMs: 300
   - action: enter_text
     selector:
       type: textField
@@ -19,7 +15,7 @@ steps:
   - action: wait_for
     predicate:
       kind: text
-      text: Complete ${todo_title}
+      text: ${todo_title}
   - action: tap
     selector:
       type: checkbox

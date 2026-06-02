@@ -6,10 +6,6 @@ variables:
   backend_crash_todo_title: backend-crash-${run_id}
   client_crash_todo_title: mobile-crash-${run_id}
 steps:
-  - action: wait_for
-    predicate:
-      kind: stable
-      stableWindowMs: 300
   - action: enter_text
     selector:
       type: textField
@@ -22,7 +18,7 @@ steps:
   - action: wait_for
     predicate:
       kind: text
-      text: Complete ${first_todo_title}
+      text: ${first_todo_title}
   - action: tap
     selector:
       type: checkbox
@@ -43,7 +39,7 @@ steps:
   - action: wait_for
     predicate:
       kind: text
-      text: Delete ${second_todo_title}
+      text: ${second_todo_title}
   - action: tap
     selector:
       type: button
@@ -64,7 +60,7 @@ steps:
   - action: wait_for
     predicate:
       kind: text
-      text: Delete ${backend_crash_todo_title}
+      text: ${backend_crash_todo_title}
   - action: tap
     selector:
       type: button
@@ -85,7 +81,7 @@ steps:
   - action: wait_for
     predicate:
       kind: text
-      text: Complete ${client_crash_todo_title}
+      text: ${client_crash_todo_title}
   - action: tap
     selector:
       type: checkbox

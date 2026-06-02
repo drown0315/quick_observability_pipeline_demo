@@ -8,8 +8,8 @@ The prototype simulates defects that escaped pre-release testing. The injected d
 
 ## Non-goals
 
-- Production deployment, alert routing, or webhook-driven Codex wake-up.
-- Automated pull request merges or production releases.
+- Production deployment, alert routing, webhook-driven Codex wake-up, or task scheduling.
+- Automated Git commits, pull requests, or production releases.
 - Production-grade issue indexing, deduplication, caching, RBAC, or audit storage.
 - Android, iOS, ANR, or real-device performance validation.
 - Grafana, Jaeger UI, or additional observability dashboards.
@@ -34,21 +34,9 @@ Codex
   -> scripts/diagnostics
   -> Observability Gateway
   -> Sentry API and Victoria APIs
-
-Repair Coordinator
-  -> Observability Gateway
-  -> Codex
-  -> flutter-mcp-toolkit
-  -> GitHub pull request
 ```
 
 The Gateway is a read-only, stateless aggregation layer. It bounds and normalizes diagnostic evidence but does not alert, schedule tasks, or decide fixes.
-
-The Repair Coordinator is a local orchestration service. It polls the Gateway
-for new issues, stores repair-task state in SQLite, invokes Codex for one task
-at a time, replays reviewed UI workloads, and creates a pull request after a
-successful repair. The Coordinator does not bypass the Gateway to query Sentry
-or Victoria services directly.
 
 ## Repository Layout
 
@@ -57,7 +45,6 @@ app/                              Flutter macOS App
 services/
   todo_api/                       FastAPI + SQLite + OTel
   observability_gateway/          Read-only aggregation Gateway
-  repair_coordinator/             Local polling and repair-task orchestration
 observability/
   otel-collector-config.yaml
 harness/
@@ -66,7 +53,6 @@ harness/
 scripts/
   start_local.sh
   stop_local.sh
-  run_repair_coordinator.sh
   diagnostics
 docker-compose.yml
 .env.example
@@ -285,35 +271,19 @@ These are hidden product defects for workload purposes. They are not represented
 
 ## Repair Loop
 
-The Repair Coordinator starts Codex after polling the Gateway and finding a new
-issue. The first version uses polling rather than webhook delivery. Each issue
-ID creates at most one repair task unless an operator explicitly retries a
-failed task.
+The first version starts Codex manually. Diagnosis begins when the harness fails or when its post-run issue check finds a new issue.
 
 ```text
 for up to 3 attempts:
-  invoke Codex in the task worktree
-  query bounded diagnostics through the CLI
-  run the reviewed workload with a new run_id
+  run the mixed workload with a new run_id
+  query diagnostics through the CLI
   if the journey succeeds and the run created no new issues:
-    commit, push, and create a pull request
     stop successfully
   analyze the evidence
   modify allowed product code
   restart only affected components
 stop and report evidence, attempt history, and current diff
 ```
-
-Codex may use additional Flutter MCP operations while diagnosing a failure.
-Formal replay uses a reviewed `*.hs.yaml` workload interpreted strictly by the
-Coordinator. Selector resolution requires exactly one semantic match; missing
-or ambiguous selectors fail validation instead of falling back to coordinates
-or an index.
-
-Each repair task runs serially in its own Git worktree on a
-`codex/repair-<task-id>` branch. A successful task creates a normal pull request
-but does not merge it. The local-first prototype reuses the developer machine's
-Git and `gh` authentication; a later version should use an isolated bot token.
 
 Allowed automatic repair paths:
 
@@ -339,7 +309,6 @@ services/todo_api/ changed
   -> docker compose up -d --build todo-api
 
 app/lib/ changed
-  -> relaunch Flutter App from the task worktree
   -> flutter-mcp-toolkit hot restart
 ```
 
