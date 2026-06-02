@@ -24,6 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--interval-seconds", default=10, type=float)
     run.add_argument("--max-polls", type=int)
     run.add_argument("--workload", type=Path)
+    run.add_argument("--verbose", action="store_true")
     commands.add_parser("claim-next", help="Claim the next queued repair task")
     prepare_worktree = commands.add_parser(
         "prepare-worktree", help="Create an isolated branch and worktree for one task"
@@ -34,6 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     invoke_codex.add_argument("task_id", type=int)
     invoke_codex.add_argument("--attempt", required=True, type=int)
+    invoke_codex.add_argument("--verbose", action="store_true")
     run_workload = commands.add_parser(
         "run-workload", help="Strictly replay one reviewed Flutter UI workload"
     )
@@ -52,6 +54,7 @@ def build_parser() -> argparse.ArgumentParser:
         "process-next", help="Repair and validate the next queued task"
     )
     process_next.add_argument("--workload", required=True, type=Path)
+    process_next.add_argument("--verbose", action="store_true")
     commands.add_parser("list-tasks", help="List stored repair tasks")
     return parser
 
@@ -95,7 +98,13 @@ def main() -> int:
         if args.command == "poll-once":
             value: object = poll_once(GatewayClient.from_environment(), store)
         elif args.command == "run":
-            value = run(args.interval_seconds, args.max_polls, args.workload, store)
+            value = run(
+                args.interval_seconds,
+                args.max_polls,
+                args.workload,
+                store,
+                verbose=args.verbose,
+            )
         elif args.command == "claim-next":
             value = store.claim_next()
         elif args.command == "prepare-worktree":
@@ -106,7 +115,7 @@ def main() -> int:
                 worktree_path=str(value["worktree_path"]),
             )
         elif args.command == "invoke-codex":
-            value = CodexRunner.from_environment().invoke(
+            value = CodexRunner.from_environment(verbose=args.verbose).invoke(
                 store.get_task(args.task_id), attempt=args.attempt
             )
         elif args.command == "check-changes":
@@ -118,7 +127,9 @@ def main() -> int:
             )
             store.record_pr(args.task_id, pr_url=str(value["pr_url"]))
         elif args.command == "process-next":
-            value = RepairOrchestrator.from_environment(store).process_next(
+            value = RepairOrchestrator.from_environment(
+                store, verbose=args.verbose
+            ).process_next(
                 workload_path=args.workload
             )
         else:
@@ -135,6 +146,8 @@ def run(
     max_polls: int | None,
     workload_path: Path | None,
     store: RepairTaskStore,
+    *,
+    verbose: bool = False,
 ) -> dict[str, int]:
     """Poll the Gateway repeatedly and return cumulative discovery counts.
 
@@ -146,6 +159,8 @@ def run(
         workload_path: Optional reviewed UI workload. When present, each poll
             processes one queued repair task after issue discovery.
         store: SQLite task store shared by every poll.
+        verbose: Whether to stream Codex stdout and stderr while each repair
+            attempt runs. Output is still retained in the task result.
 
     Returns:
         Number of polls completed, issue summaries seen, and queued tasks
@@ -159,7 +174,7 @@ def run(
     gateway = GatewayClient.from_environment()
     totals: dict[str, object] = {"polls": 0, "created": 0, "seen": 0}
     orchestrator = (
-        RepairOrchestrator.from_environment(store)
+        RepairOrchestrator.from_environment(store, verbose=verbose)
         if workload_path is not None
         else None
     )

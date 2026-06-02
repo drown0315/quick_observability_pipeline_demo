@@ -9,7 +9,26 @@ from typing import Iterator
 
 import pytest
 
+from repair_coordinator.__main__ import build_parser
+from repair_coordinator.codex import CodexRunner
+
 SERVICE_ROOT = Path(__file__).parents[1]
+
+
+def test_verbose_flag_is_available_for_codex_running_commands() -> None:
+    parser = build_parser()
+
+    assert parser.parse_args(["run", "--verbose"]).verbose is True
+    assert (
+        parser.parse_args(
+            ["process-next", "--workload", "journey.yaml", "--verbose"]
+        ).verbose
+        is True
+    )
+    assert (
+        parser.parse_args(["invoke-codex", "1", "--attempt", "1", "--verbose"]).verbose
+        is True
+    )
 
 
 @pytest.fixture
@@ -240,6 +259,29 @@ def test_invoke_codex_runs_repair_prompt_for_prepared_task(
     assert "app/lib/" in prompt
     assert "services/todo_api/" in prompt
     assert "harness/" in prompt
+
+
+def test_verbose_codex_invocation_streams_and_retains_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    codex_path = tmp_path / "fake-codex"
+    write_verbose_fake_codex(codex_path)
+
+    result = CodexRunner([str(codex_path)], verbose=True).invoke(
+        {
+            "task_id": 1,
+            "issue_id": "client:123",
+            "status": "running",
+            "worktree_path": str(tmp_path),
+        },
+        attempt=1,
+    )
+    captured = capsys.readouterr()
+
+    assert captured.out == "repair stdout\n"
+    assert captured.err == "repair stderr\n"
+    assert result["output"] == "repair stdout\n"
+    assert result["error_output"] == "repair stderr\n"
 
 
 def test_check_changes_rejects_protected_paths(
@@ -481,6 +523,20 @@ Path(os.environ["REPAIR_CODEX_CAPTURE_PATH"]).write_text(
     json.dumps({"arguments": sys.argv[1:]})
 )
 print("repair proposed")
+"""
+    )
+    codex_path.chmod(0o755)
+
+
+def write_verbose_fake_codex(codex_path: Path) -> None:
+    """Write a Codex replacement that emits one stdout and stderr line."""
+
+    codex_path.write_text(
+        """#!/usr/bin/env python3
+import sys
+
+print("repair stdout", flush=True)
+print("repair stderr", file=sys.stderr, flush=True)
 """
     )
     codex_path.chmod(0o755)

@@ -65,6 +65,13 @@ worktree, and creates a pull request after validation passes:
 ./scripts/run_repair_coordinator.sh
 ```
 
+Add `--verbose` to stream Codex stdout and stderr while each repair attempt
+runs:
+
+```bash
+./scripts/run_repair_coordinator.sh --verbose
+```
+
 Stop the backend without deleting persisted SQLite data:
 
 ```bash

@@ -35,7 +35,9 @@ class RepairOrchestrator:
         self._pull_requests = pull_requests
 
     @classmethod
-    def from_environment(cls, store: RepairTaskStore) -> "RepairOrchestrator":
+    def from_environment(
+        cls, store: RepairTaskStore, *, verbose: bool = False
+    ) -> "RepairOrchestrator":
         """Create an orchestrator from local Coordinator configuration."""
 
         toolkit = ToolkitClient.from_environment()
@@ -43,7 +45,7 @@ class RepairOrchestrator:
             store=store,
             gateway=GatewayClient.from_environment(),
             worktrees=WorktreeManager.from_environment(),
-            codex=CodexRunner.from_environment(),
+            codex=CodexRunner.from_environment(verbose=verbose),
             change_guard=ChangeGuard(),
             restarter=ComponentRestarter.from_environment(toolkit),
             workloads=WorkloadRunner.from_environment(toolkit),

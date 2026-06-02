@@ -131,11 +131,12 @@ Start one polling iteration:
 
 ```bash
 export REPAIR_COORDINATOR_STATE_ROOT=/tmp/repair-acceptance
-./scripts/run_repair_coordinator.sh --max-polls 1
+./scripts/run_repair_coordinator.sh --max-polls 1 --verbose
 ```
 
 Confirm:
 
+- Codex stdout and stderr appear in the terminal while each attempt runs
 - the new issue creates one SQLite repair task
 - repeated polls do not create a duplicate task for the same `issue_id`
 - the task uses `.repair_coordinator/worktrees/repair-<task-id>`
