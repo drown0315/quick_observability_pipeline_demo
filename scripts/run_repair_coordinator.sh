@@ -9,6 +9,7 @@ mkdir -p "$state_root/worktrees"
 export REPAIR_COORDINATOR_DB_PATH="${REPAIR_COORDINATOR_DB_PATH:-$state_root/tasks.db}"
 export REPAIR_REPOSITORY_ROOT="${REPAIR_REPOSITORY_ROOT:-$repository_root}"
 export REPAIR_WORKTREE_ROOT="${REPAIR_WORKTREE_ROOT:-$state_root/worktrees}"
+export REPAIR_COMPOSE_ENV_FILE="${REPAIR_COMPOSE_ENV_FILE:-$repository_root/.env}"
 export REPAIR_FLUTTER_LAUNCH_COMMAND="${REPAIR_FLUTTER_LAUNCH_COMMAND:-$repository_root/scripts/run_flutter_repair_worktree.sh}"
 export REPAIR_CODEX_SANDBOX="${REPAIR_CODEX_SANDBOX:-workspace-write}"
 

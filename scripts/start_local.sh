@@ -9,18 +9,7 @@ if [[ ! -f .env ]]; then
   exit 1
 fi
 
-set -a
-source .env
-set +a
-
-for name in SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT; do
-  if [[ -z "${!name:-}" ]]; then
-    echo "Missing ${name} in .env" >&2
-    exit 1
-  fi
-done
-
-docker compose up -d --build
+docker compose --env-file "$repository_root/.env" up -d --build
 
 wait_for_service() {
   local name="$1"
@@ -36,7 +25,7 @@ wait_for_service() {
   done
 
   echo "${name} did not become ready within 60 seconds" >&2
-  docker compose logs "$name" >&2
+  docker compose --env-file "$repository_root/.env" logs "$name" >&2
   return 1
 }
 
