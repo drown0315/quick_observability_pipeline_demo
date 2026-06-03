@@ -13,6 +13,7 @@ class ChangeGuard:
     """
 
     _allowed_prefixes = ("app/lib/", "services/todo_api/")
+    _ignored_prefixes = (".repair/",)
 
     def check(self, task: dict[str, object]) -> dict[str, object]:
         """Return changed paths and any files outside the repair whitelist.
@@ -32,7 +33,11 @@ class ChangeGuard:
         worktree_path = task.get("worktree_path")
         if not worktree_path:
             raise ValueError("change validation requires one prepared task")
-        changed_paths = self._changed_paths(str(worktree_path))
+        changed_paths = [
+            path
+            for path in self._changed_paths(str(worktree_path))
+            if not path.startswith(self._ignored_prefixes)
+        ]
         disallowed_paths = [
             path
             for path in changed_paths

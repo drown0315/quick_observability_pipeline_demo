@@ -43,3 +43,26 @@ class GatewayClient:
             f"{self._base_url}/diagnostics/issues?{urlencode(parameters)}", timeout=5
         ) as response:
             return json.load(response)
+
+    def get_issue(self, issue_id: str) -> dict[str, object]:
+        """Return bounded diagnostic detail for one Gateway issue.
+
+        Args:
+            issue_id: Gateway issue ID from an enqueued repair task. Backend
+                issues use the `backend:<uuid>` form, and Flutter issues use
+                the `client:<id>` form.
+
+        Returns:
+            Issue detail from `/diagnostics/issues/{issue_id}`, including the
+            summary and the bounded logs, spans, metrics, stacktrace, or
+            breadcrumbs available for that issue type.
+
+        Example:
+            `get_issue("client:123")` returns the Sentry stacktrace,
+            breadcrumbs, and client context for that Flutter issue.
+        """
+
+        with urlopen(
+            f"{self._base_url}/diagnostics/issues/{issue_id}", timeout=5
+        ) as response:
+            return json.load(response)

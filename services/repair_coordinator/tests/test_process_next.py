@@ -25,18 +25,38 @@ def gateway_server() -> Iterator[tuple[str, list[str]]]:
         def do_GET(self) -> None:
             requests.append(self.path)
             query = parse_qs(urlparse(self.path).query)
-            value: list[dict[str, object]] = []
-            if "run_id" not in query:
-                value = [
+            if self.path == "/diagnostics/issues/client:123":
+                body = json.dumps(
                     {
-                        "issue_id": "client:123",
-                        "timestamp": "2026-06-01T08:30:00Z",
-                        "service": "todo-flutter-macos",
-                        "exception_type": "StateError",
-                        "message": "todo completion failed",
+                        "summary": {
+                            "issue_id": "client:123",
+                            "timestamp": "2026-06-01T08:30:00Z",
+                            "service": "todo-flutter-macos",
+                            "exception_type": "StateError",
+                            "message": "todo completion failed",
+                        },
+                        "stacktrace": [{"function": "completeTodo"}],
+                        "breadcrumbs": [{"category": "ui.tap"}],
+                        "context": {"environment": "local"},
+                        "trace_correlation": {
+                            "trace_id": None,
+                            "source": "sentry_trace_context",
+                        },
                     }
-                ]
-            body = json.dumps(value).encode()
+                ).encode()
+            else:
+                value: list[dict[str, object]] = []
+                if "run_id" not in query:
+                    value = [
+                        {
+                            "issue_id": "client:123",
+                            "timestamp": "2026-06-01T08:30:00Z",
+                            "service": "todo-flutter-macos",
+                            "exception_type": "StateError",
+                            "message": "todo completion failed",
+                        }
+                    ]
+                body = json.dumps(value).encode()
             self.send_response(200)
             self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(body)))
@@ -122,12 +142,22 @@ def test_process_next_repairs_validates_and_publishes_pull_request(
     ]
     assert flutter_launch_capture_path.read_text() == str(worktree_root / "repair-1")
     assert any("run_id=" in request for request in gateway_requests)
+    assert (
+        subprocess.run(
+            ["git", "ls-files", ".repair/evidence.json"],
+            check=True,
+            capture_output=True,
+            cwd=worktree_root / "repair-1",
+            text=True,
+        ).stdout
+        == ""
+    )
 
 
 def test_process_next_stops_after_three_disallowed_repair_attempts(
     gateway_server: tuple[str, list[str]], tmp_path: Path
 ) -> None:
-    gateway_url, _ = gateway_server
+    gateway_url, gateway_requests = gateway_server
     database_path = tmp_path / "repair-coordinator.db"
     repository_path = tmp_path / "repository"
     remote_path = tmp_path / "remote.git"
@@ -168,7 +198,12 @@ def test_process_next_stops_after_three_disallowed_repair_attempts(
     assert result["attempts"] == 3
     assert len(result["attempt_history"]) == 3
     assert result["current_diff"]["disallowed_paths"] == ["harness/forbidden.txt"]
-    assert codex_capture_path.read_text().splitlines() == ["attempt", "attempt", "attempt"]
+    assert codex_capture_path.read_text().splitlines() == [
+        "dirty=False",
+        "dirty=False",
+        "dirty=False",
+    ]
+    assert gateway_requests.count("/diagnostics/issues/client:123") == 1
     assert not toolkit_capture_path.exists()
 
 
@@ -311,9 +346,10 @@ import os
 from pathlib import Path
 
 Path("harness").mkdir(exist_ok=True)
-Path("harness/forbidden.txt").write_text("not allowed\\n")
+forbidden_path = Path("harness/forbidden.txt")
 with Path(os.environ["REPAIR_CODEX_CAPTURE_PATH"]).open("a") as capture:
-    capture.write("attempt\\n")
+    capture.write(f"dirty={forbidden_path.exists()}\\n")
+forbidden_path.write_text("not allowed\\n")
 """
     )
     codex_path.chmod(0o755)

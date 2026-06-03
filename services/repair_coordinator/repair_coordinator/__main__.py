@@ -8,6 +8,7 @@ from typing import Callable
 
 from repair_coordinator.changes import ChangeGuard
 from repair_coordinator.codex import CodexRunner
+from repair_coordinator.evidence import EvidenceSnapshotWriter
 from repair_coordinator.gateway import GatewayClient
 from repair_coordinator.orchestration import RepairOrchestrator
 from repair_coordinator.pull_requests import PullRequestPublisher
@@ -120,8 +121,10 @@ def main() -> int:
                 worktree_path=str(value["worktree_path"]),
             )
         elif args.command == "invoke-codex":
+            task = store.get_task(args.task_id)
+            EvidenceSnapshotWriter(GatewayClient.from_environment()).write(task)
             value = CodexRunner.from_environment(verbose=args.verbose).invoke(
-                store.get_task(args.task_id), attempt=args.attempt
+                task, attempt=args.attempt
             )
         elif args.command == "check-changes":
             value = ChangeGuard().check(store.get_task(args.task_id))

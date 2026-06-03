@@ -57,6 +57,30 @@ class WorktreeManager:
             "worktree_path": str(worktree_path),
         }
 
+    def restore_attempt_worktree(self, task: dict[str, object]) -> None:
+        """Restore one repair worktree before a Codex attempt starts.
+
+        Args:
+            task: Running repair task with a prepared worktree path. The method
+                raises `ValueError` when the task has no worktree path.
+
+        Example:
+            If a failed attempt edited `harness/forbidden.txt`, the next
+            attempt starts without that file while `.repair/evidence.json`
+            remains available.
+        """
+
+        worktree_path = task.get("worktree_path")
+        if not worktree_path:
+            raise ValueError("attempt reset requires one prepared task")
+        self._run_worktree_git(str(worktree_path), "restore", "--staged", "--worktree", ".")
+        for path in self._untracked_paths(str(worktree_path)):
+            if path.startswith(".repair/"):
+                continue
+            absolute_path = Path(str(worktree_path)) / path
+            if absolute_path.exists():
+                absolute_path.unlink()
+
     def _available_destination(self, task_id: int) -> tuple[str, Path]:
         """Return an unused repair branch and worktree path for one task."""
 
@@ -102,3 +126,40 @@ class WorktreeManager:
                 f"stderr: {stderr}"
             )
         return result
+
+    @staticmethod
+    def _run_worktree_git(
+        worktree_path: str, *arguments: str
+    ) -> subprocess.CompletedProcess[str]:
+        """Run one required Git command inside a repair worktree."""
+
+        result = subprocess.run(
+            ["git", *arguments],
+            check=False,
+            capture_output=True,
+            cwd=worktree_path,
+            text=True,
+        )
+        if result.returncode != 0:
+            stderr = result.stderr.strip() or "(no stderr)"
+            stdout = result.stdout.strip() or "(no stdout)"
+            raise RuntimeError(
+                "git command failed: "
+                f"git {' '.join(arguments)}\n"
+                f"stdout: {stdout}\n"
+                f"stderr: {stderr}"
+            )
+        return result
+
+    @staticmethod
+    def _untracked_paths(worktree_path: str) -> list[str]:
+        """Return untracked file paths from one repair worktree."""
+
+        result = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+            check=True,
+            capture_output=True,
+            cwd=worktree_path,
+            text=True,
+        )
+        return [path for path in result.stdout.split("\0") if path]
