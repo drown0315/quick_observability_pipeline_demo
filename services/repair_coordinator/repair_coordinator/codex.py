@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import shlex
 import subprocess
 import sys
@@ -71,14 +72,16 @@ class CodexRunner:
             self._sandbox,
             self._prompt(issue_id=str(task["issue_id"]), attempt=attempt),
         ]
+        environment = self._environment()
         result = (
-            self._run_verbose(command, cwd=str(worktree_path))
+            self._run_verbose(command, cwd=str(worktree_path), env=environment)
             if self._verbose
             else subprocess.run(
                 command,
                 check=False,
                 capture_output=True,
                 cwd=str(worktree_path),
+                env=environment,
                 text=True,
             )
         )
@@ -92,13 +95,14 @@ class CodexRunner:
 
     @staticmethod
     def _run_verbose(
-        command: list[str], *, cwd: str
+        command: list[str], *, cwd: str, env: dict[str, str]
     ) -> subprocess.CompletedProcess[str]:
         """Run Codex while forwarding and retaining each output line."""
 
         process = subprocess.Popen(
             command,
             cwd=cwd,
+            env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -141,6 +145,48 @@ class CodexRunner:
             destination.flush()
 
     @staticmethod
+    def _environment() -> dict[str, str]:
+        """Return the Codex process environment with compose variables loaded."""
+
+        environment = os.environ.copy()
+        env_file = os.environ.get("REPAIR_COMPOSE_ENV_FILE")
+        if env_file:
+            for key, value in CodexRunner._read_env_file(Path(env_file)).items():
+                if not environment.get(key):
+                    environment[key] = value
+        return environment
+
+    @staticmethod
+    def _read_env_file(path: Path) -> dict[str, str]:
+        """Read simple KEY=VALUE assignments from one dotenv-style file."""
+
+        if not path.exists():
+            return {}
+        values: dict[str, str] = {}
+        for line in path.read_text().splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            key, value = stripped.split("=", 1)
+            key = key.removeprefix("export ").strip()
+            if not key:
+                continue
+            values[key] = CodexRunner._parse_env_value(value.strip())
+        return values
+
+    @staticmethod
+    def _parse_env_value(value: str) -> str:
+        """Return one dotenv value without surrounding shell quotes."""
+
+        if not value:
+            return ""
+        try:
+            parsed = shlex.split(value, comments=False, posix=True)
+        except ValueError:
+            return value
+        return parsed[0] if len(parsed) == 1 else value
+
+    @staticmethod
     def _prompt(*, issue_id: str, attempt: int) -> str:
         """Build the bounded instructions for one Codex repair attempt."""
 
@@ -158,6 +204,10 @@ Do not modify protected validation or observability paths:
 - docker-compose.yml
 - scripts/diagnostics
 
-Diagnose the issue, make the smallest product-code repair, restart only affected
-components, and report the evidence used and validation performed.
+Diagnose the issue and make the smallest product-code repair. Do not restart
+components yourself; the Coordinator validation flow restarts affected services
+after your diff is checked. Do not run a bare `docker compose` command from the
+repair worktree. If manual compose inspection is unavoidable, pass the
+`REPAIR_COMPOSE_ENV_FILE` environment variable to Docker Compose with
+`--env-file` so the root repository `.env` is used.
 """

@@ -262,10 +262,16 @@ def test_invoke_codex_runs_repair_prompt_for_prepared_task(
     capture_path = tmp_path / "codex-invocation.json"
     codex_path = tmp_path / "fake-codex"
     initialize_git_repository(repository_path)
+    (repository_path / ".env").write_text(
+        "SENTRY_AUTH_TOKEN=test-token\n"
+        "SENTRY_ORG=test-org\n"
+        "SENTRY_PROJECT=todo-flutter-macos\n"
+    )
     write_fake_codex(codex_path)
     environment = {
         "REPAIR_REPOSITORY_ROOT": str(repository_path),
         "REPAIR_WORKTREE_ROOT": str(worktree_root),
+        "REPAIR_COMPOSE_ENV_FILE": str(repository_path / ".env"),
         "REPAIR_CODEX_COMMAND": str(codex_path),
         "REPAIR_CODEX_CAPTURE_PATH": str(capture_path),
     }
@@ -316,6 +322,14 @@ def test_invoke_codex_runs_repair_prompt_for_prepared_task(
     assert "app/lib/" in prompt
     assert "services/todo_api/" in prompt
     assert "harness/" in prompt
+    assert "REPAIR_COMPOSE_ENV_FILE" in prompt
+    assert "docker compose" in prompt
+    assert invocation["environment"] == {
+        "REPAIR_COMPOSE_ENV_FILE": str(repository_path / ".env"),
+        "SENTRY_AUTH_TOKEN": "test-token",
+        "SENTRY_ORG": "test-org",
+        "SENTRY_PROJECT": "todo-flutter-macos",
+    }
     snapshot = json.loads((worktree_root / "repair-1/.repair/evidence.json").read_text())
     assert snapshot["issue_id"] == "client:123"
     assert snapshot["source"] == "diagnostics_gateway"
@@ -627,7 +641,20 @@ from pathlib import Path
 import sys
 
 Path(os.environ["REPAIR_CODEX_CAPTURE_PATH"]).write_text(
-    json.dumps({"arguments": sys.argv[1:]})
+    json.dumps(
+        {
+            "arguments": sys.argv[1:],
+            "environment": {
+                name: os.environ.get(name)
+                for name in (
+                    "REPAIR_COMPOSE_ENV_FILE",
+                    "SENTRY_AUTH_TOKEN",
+                    "SENTRY_ORG",
+                    "SENTRY_PROJECT",
+                )
+            },
+        }
+    )
 )
 print("repair proposed")
 """
