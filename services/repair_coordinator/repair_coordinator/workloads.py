@@ -5,9 +5,13 @@ import shlex
 from string import Template
 import subprocess
 from datetime import datetime, timezone
+import time
 from typing import Callable
 
 import yaml
+
+
+TRANSIENT_TOOLKIT_COMMAND_MESSAGES = ("VM service not connected",)
 
 
 class SelectorResolutionError(Exception):
@@ -60,10 +64,18 @@ class ToolkitClient:
         nodes.
     """
 
-    def __init__(self, command: list[str]) -> None:
+    def __init__(
+        self,
+        command: list[str],
+        *,
+        attempts: int = 6,
+        delay_seconds: float = 0.5,
+    ) -> None:
         self._command = command
         self._process: subprocess.Popen[str] | None = None
         self._next_request_id = 1
+        self._attempts = attempts
+        self._delay_seconds = delay_seconds
 
     @classmethod
     def from_environment(cls) -> "ToolkitClient":
@@ -71,32 +83,45 @@ class ToolkitClient:
 
         return cls(
             shlex.split(
-                os.environ.get("FLUTTER_MCP_TOOLKIT_COMMAND", "flutter-mcp-toolkit")
-            )
+                os.environ.get(
+                    "FLUTTER_MCP_TOOLKIT_COMMAND",
+                    "flutter-mcp-toolkit --flutter-device macos",
+                )
+            ),
+            delay_seconds=float(
+                os.environ.get("FLUTTER_MCP_TOOLKIT_RETRY_DELAY_SECONDS", "0.5")
+            ),
         )
 
     def execute(self, name: str, arguments: dict[str, object]) -> dict[str, object]:
         """Execute one Flutter MCP command and return its data payload."""
 
-        for attempt in range(2):
+        for attempt in range(self._attempts):
             try:
                 envelope = self._request(
                     "command/execute",
                     {"name": name, "args": arguments},
                 )
-                break
             except ToolkitProcessError as error:
                 self.close()
-                if attempt == 1:
+                if attempt == self._attempts - 1:
                     raise ToolkitCommandError(
                         {
                             "code": "toolkit_process_failed",
                             "message": str(error),
                         }
                     ) from error
-        if not envelope.get("ok"):
-            raise ToolkitCommandError(envelope["error"])
-        return envelope["data"]
+                continue
+            if envelope.get("ok"):
+                return envelope["data"]
+            error = envelope["error"]
+            if (
+                attempt < self._attempts - 1
+                and self._is_transient_command_error(error)
+            ):
+                time.sleep(self._delay_seconds)
+                continue
+            raise ToolkitCommandError(error)
 
     def close(self) -> None:
         """Stop the toolkit daemon when this client no longer needs its VM connection."""
@@ -170,6 +195,16 @@ class ToolkitClient:
         if "error" in response:
             raise ToolkitCommandError(response["error"])
         return response["result"]
+
+    @staticmethod
+    def _is_transient_command_error(error: dict[str, object]) -> bool:
+        """Return whether a toolkit command can succeed after the VM reconnects."""
+
+        message = str(error.get("message", ""))
+        return any(
+            transient_message in message
+            for transient_message in TRANSIENT_TOOLKIT_COMMAND_MESSAGES
+        )
 
 
 class SelectorResolver:
@@ -285,13 +320,23 @@ class WorkloadRunner:
         )
         variables = self._variables(workload.get("variables", {}), run_id=run_id)
         self._report(progress, "setting Flutter workload run id")
-        self._toolkit.execute(
-            "fmt_client_tool",
-            {
-                "toolName": "todo_set_workload_run_id",
-                "arguments": {"run_id": run_id},
-            },
-        )
+        try:
+            self._toolkit.execute(
+                "fmt_client_tool",
+                {
+                    "toolName": "todo_set_workload_run_id",
+                    "arguments": {"run_id": run_id},
+                },
+            )
+        except ToolkitCommandError as error:
+            self._report(progress, f"setting Flutter workload run id failed: {error}")
+            return self._initial_failure_result(workload, run_id, error)
+        self._report(progress, "focusing Flutter app window")
+        try:
+            self._toolkit.execute("focus_window", {})
+        except ToolkitCommandError as error:
+            self._report(progress, f"focusing Flutter app window failed: {error}")
+            return self._initial_failure_result(workload, run_id, error)
         completed_steps = 0
         for index, raw_step in enumerate(steps):
             step = self._expand(raw_step, variables)
@@ -350,6 +395,26 @@ class WorkloadRunner:
             self._toolkit.execute("tap_widget", widget)
             return
         raise ValueError(f"unsupported workload action: {step['action']}")
+
+    def _initial_failure_result(
+        self,
+        workload: dict[str, object],
+        run_id: str,
+        error: ToolkitCommandError,
+    ) -> dict[str, object]:
+        """Return a failed workload result before any reviewed step runs."""
+
+        return {
+            "name": workload["name"],
+            "run_id": run_id,
+            "status": "failed",
+            "completed_steps": 0,
+            "failed_step": None,
+            "failed_at": datetime.now(timezone.utc).isoformat(),
+            "error": error.result,
+            "last_snapshot": self._last_snapshot_or_none(),
+            "app_errors": self._app_errors_or_none(),
+        }
 
     def _last_snapshot_or_none(self) -> dict[str, object] | None:
         """Return the latest semantic snapshot when the App remains reachable."""

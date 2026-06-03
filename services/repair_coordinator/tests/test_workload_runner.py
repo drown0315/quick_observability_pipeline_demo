@@ -6,9 +6,19 @@ import sys
 
 import yaml
 
+from repair_coordinator.workloads import ToolkitClient
+
 SERVICE_ROOT = Path(__file__).parents[1]
 REPOSITORY_ROOT = Path(__file__).parents[3]
 RUN_ID = "00000000-0000-0000-0000-000000000123"
+
+
+def test_toolkit_client_defaults_to_macos_device(monkeypatch) -> None:
+    monkeypatch.delenv("FLUTTER_MCP_TOOLKIT_COMMAND", raising=False)
+
+    client = ToolkitClient.from_environment()
+
+    assert client._command == ["flutter-mcp-toolkit", "--flutter-device", "macos"]
 
 
 def test_run_workload_maps_enter_text_to_unique_semantic_widget(tmp_path: Path) -> None:
@@ -59,6 +69,10 @@ steps:
                 "toolName": "todo_set_workload_run_id",
                 "arguments": {"run_id": RUN_ID},
             },
+        },
+        {
+            "name": "focus_window",
+            "arguments": {},
         },
         {
             "name": "semantic_snapshot",
@@ -126,6 +140,10 @@ steps:
                 "toolName": "todo_set_workload_run_id",
                 "arguments": {"run_id": RUN_ID},
             },
+        },
+        {
+            "name": "focus_window",
+            "arguments": {},
         },
         {
             "name": "semantic_snapshot",
@@ -197,6 +215,7 @@ steps:
     assert "failed_at" in result
     assert [invocation["name"] for invocation in invocations] == [
         "fmt_client_tool",
+        "focus_window",
         "semantic_snapshot",
         "get_app_errors",
     ]
@@ -248,6 +267,7 @@ steps:
     assert result["app_errors"] == {"errors": []}
     assert [invocation["name"] for invocation in invocations] == [
         "fmt_client_tool",
+        "focus_window",
         "wait_for",
         "semantic_snapshot",
         "get_app_errors",
@@ -280,7 +300,131 @@ def test_run_workload_retries_one_transient_toolkit_process_failure(
     )
 
     assert result["status"] == "passed"
-    assert len(capture_path.read_text().splitlines()) == 1
+    assert [
+        json.loads(line)["name"] for line in capture_path.read_text().splitlines()
+    ] == ["fmt_client_tool", "focus_window"]
+
+
+def test_run_workload_retries_transient_vm_service_disconnect(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "repair-coordinator.db"
+    toolkit_path = tmp_path / "fake-flutter-mcp-toolkit"
+    capture_path = tmp_path / "toolkit-invocations.jsonl"
+    failure_marker_path = tmp_path / "vm-disconnect-marker"
+    workload_path = tmp_path / "transient_vm_disconnect.hs.yaml"
+    write_fake_toolkit(toolkit_path)
+    workload_path.write_text("version: 1\nname: transient_vm_disconnect\nsteps: []\n")
+
+    result = run_coordinator(
+        "run-workload",
+        str(workload_path),
+        "--run-id",
+        RUN_ID,
+        database_path=database_path,
+        extra_environment={
+            "FLUTTER_MCP_TOOLKIT_COMMAND": str(toolkit_path),
+            "FLUTTER_MCP_TOOLKIT_CAPTURE_PATH": str(capture_path),
+            "FLUTTER_MCP_TOOLKIT_TRANSIENT_VM_DISCONNECT": "true",
+            "FLUTTER_MCP_TOOLKIT_FAILURE_MARKER_PATH": str(failure_marker_path),
+            "FLUTTER_MCP_TOOLKIT_RETRY_DELAY_SECONDS": "0",
+        },
+    )
+    invocations = [
+        json.loads(line) for line in capture_path.read_text().splitlines()
+    ]
+
+    assert result["status"] == "passed"
+    assert [invocation["name"] for invocation in invocations] == [
+        "fmt_client_tool",
+        "fmt_client_tool",
+        "focus_window",
+    ]
+
+
+def test_run_workload_reports_initial_toolkit_failure_without_traceback(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "repair-coordinator.db"
+    toolkit_path = tmp_path / "fake-flutter-mcp-toolkit"
+    capture_path = tmp_path / "toolkit-invocations.jsonl"
+    workload_path = tmp_path / "initial_failure.hs.yaml"
+    write_fake_toolkit(toolkit_path)
+    workload_path.write_text("version: 1\nname: initial_failure\nsteps: []\n")
+
+    result = run_coordinator(
+        "run-workload",
+        str(workload_path),
+        "--run-id",
+        RUN_ID,
+        database_path=database_path,
+        extra_environment={
+            "FLUTTER_MCP_TOOLKIT_COMMAND": str(toolkit_path),
+            "FLUTTER_MCP_TOOLKIT_CAPTURE_PATH": str(capture_path),
+            "FLUTTER_MCP_TOOLKIT_PERMANENT_VM_DISCONNECT": "true",
+            "FLUTTER_MCP_TOOLKIT_RETRY_DELAY_SECONDS": "0",
+        },
+    )
+
+    assert result["status"] == "failed"
+    assert result["completed_steps"] == 0
+    assert result["failed_step"] is None
+    assert result["error"] == {
+        "code": -32000,
+        "message": "VM service not connected",
+    }
+    assert result["last_snapshot"] is None
+    assert result["app_errors"] is None
+
+
+def test_run_workload_reports_focus_failure_before_running_steps(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "repair-coordinator.db"
+    toolkit_path = tmp_path / "fake-flutter-mcp-toolkit"
+    capture_path = tmp_path / "toolkit-invocations.jsonl"
+    workload_path = tmp_path / "focus_failure.hs.yaml"
+    write_fake_toolkit(toolkit_path)
+    workload_path.write_text(
+        """version: 1
+name: focus_failure
+steps:
+  - action: wait_for
+    predicate:
+      kind: stable
+      stableWindowMs: 300
+"""
+    )
+
+    result = run_coordinator(
+        "run-workload",
+        str(workload_path),
+        "--run-id",
+        RUN_ID,
+        database_path=database_path,
+        extra_environment={
+            "FLUTTER_MCP_TOOLKIT_COMMAND": str(toolkit_path),
+            "FLUTTER_MCP_TOOLKIT_CAPTURE_PATH": str(capture_path),
+            "FLUTTER_MCP_TOOLKIT_FAIL_FOCUS_WINDOW": "true",
+        },
+    )
+    invocations = [
+        json.loads(line) for line in capture_path.read_text().splitlines()
+    ]
+
+    assert result["status"] == "failed"
+    assert result["completed_steps"] == 0
+    assert result["failed_step"] is None
+    assert result["error"] == {
+        "code": "focus_window_failed",
+        "message": "could not focus Flutter app window",
+    }
+    assert [invocation["name"] for invocation in invocations] == [
+        "fmt_client_tool",
+        "focus_window",
+        "semantic_snapshot",
+        "get_app_errors",
+    ]
 
 
 def test_reviewed_workloads_wait_for_todo_action_after_add() -> None:
@@ -350,6 +494,25 @@ capture_path = Path(os.environ["FLUTTER_MCP_TOOLKIT_CAPTURE_PATH"])
 if sys.argv[1:] != ["serve"]:
     raise SystemExit("expected serve mode")
 
+def print_vm_disconnect_response(request_id):
+    print(
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "ok": False,
+                    "data": None,
+                    "error": {
+                        "code": -32000,
+                        "message": "VM service not connected",
+                    },
+                },
+            }
+        ),
+        flush=True,
+    )
+
 for line in sys.stdin:
     request = json.loads(line)
     if request["method"] == "initialize":
@@ -367,6 +530,38 @@ for line in sys.stdin:
             raise SystemExit(1)
     with capture_path.open("a") as capture:
         capture.write(json.dumps({"name": name, "arguments": arguments}) + "\\n")
+
+    if os.environ.get("FLUTTER_MCP_TOOLKIT_TRANSIENT_VM_DISCONNECT") == "true":
+        failure_marker = Path(os.environ["FLUTTER_MCP_TOOLKIT_FAILURE_MARKER_PATH"])
+        if not failure_marker.exists():
+            failure_marker.write_text("failed once")
+            print_vm_disconnect_response(request["id"])
+            continue
+    if os.environ.get("FLUTTER_MCP_TOOLKIT_PERMANENT_VM_DISCONNECT") == "true":
+        print_vm_disconnect_response(request["id"])
+        continue
+    if (
+        name == "focus_window"
+        and os.environ.get("FLUTTER_MCP_TOOLKIT_FAIL_FOCUS_WINDOW") == "true"
+    ):
+        print(
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": request["id"],
+                    "result": {
+                        "ok": False,
+                        "data": None,
+                        "error": {
+                            "code": "focus_window_failed",
+                            "message": "could not focus Flutter app window",
+                        },
+                    },
+                }
+            ),
+            flush=True,
+        )
+        continue
 
     data = {}
     if name == "semantic_snapshot":
