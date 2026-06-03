@@ -80,11 +80,14 @@ class RepairOrchestrator:
         self._report(
             f"prepared {prepared['branch']} at {prepared['worktree_path']}"
         )
+        task = self._store.get_task(int(task["task_id"]))
+        self._report("writing diagnostic evidence snapshot")
+        self._evidence.write(task, progress=self._report)
         attempt_history: list[dict[str, object]] = []
         for attempt in range(1, 4):
             task = self._store.get_task(int(task["task_id"]))
-            self._report(f"attempt {attempt}/3: writing diagnostic evidence snapshot")
-            self._evidence.write(task, progress=self._report)
+            self._report(f"attempt {attempt}/3: restoring repair worktree")
+            self._worktrees.reset_attempt(task)
             self._report(f"attempt {attempt}/3: invoking Codex")
             codex_result = self._codex.invoke(task, attempt=attempt)
             self._report(

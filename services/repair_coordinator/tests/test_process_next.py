@@ -157,7 +157,7 @@ def test_process_next_repairs_validates_and_publishes_pull_request(
 def test_process_next_stops_after_three_disallowed_repair_attempts(
     gateway_server: tuple[str, list[str]], tmp_path: Path
 ) -> None:
-    gateway_url, _ = gateway_server
+    gateway_url, gateway_requests = gateway_server
     database_path = tmp_path / "repair-coordinator.db"
     repository_path = tmp_path / "repository"
     remote_path = tmp_path / "remote.git"
@@ -198,7 +198,12 @@ def test_process_next_stops_after_three_disallowed_repair_attempts(
     assert result["attempts"] == 3
     assert len(result["attempt_history"]) == 3
     assert result["current_diff"]["disallowed_paths"] == ["harness/forbidden.txt"]
-    assert codex_capture_path.read_text().splitlines() == ["attempt", "attempt", "attempt"]
+    assert codex_capture_path.read_text().splitlines() == [
+        "dirty=False",
+        "dirty=False",
+        "dirty=False",
+    ]
+    assert gateway_requests.count("/diagnostics/issues/client:123") == 1
     assert not toolkit_capture_path.exists()
 
 
@@ -341,9 +346,10 @@ import os
 from pathlib import Path
 
 Path("harness").mkdir(exist_ok=True)
-Path("harness/forbidden.txt").write_text("not allowed\\n")
+forbidden_path = Path("harness/forbidden.txt")
 with Path(os.environ["REPAIR_CODEX_CAPTURE_PATH"]).open("a") as capture:
-    capture.write("attempt\\n")
+    capture.write(f"dirty={forbidden_path.exists()}\\n")
+forbidden_path.write_text("not allowed\\n")
 """
     )
     codex_path.chmod(0o755)
