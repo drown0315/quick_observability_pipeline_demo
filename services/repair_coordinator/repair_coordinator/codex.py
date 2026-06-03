@@ -146,7 +146,7 @@ class CodexRunner:
 
         return f"""Repair issue {issue_id}. This is attempt {attempt} of at most 3.
 
-Query bounded diagnostic evidence through scripts/diagnostics before editing.
+Read bounded diagnostic evidence from .repair/evidence.json before editing.
 Modify product code only in:
 - app/lib/
 - services/todo_api/

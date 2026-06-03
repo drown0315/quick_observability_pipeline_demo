@@ -61,7 +61,8 @@ The normal loop is:
 - Tooling commands: `REPAIR_CODEX_COMMAND`, `FLUTTER_MCP_TOOLKIT_COMMAND`,
   `REPAIR_DOCKER_COMMAND`, `REPAIR_GH_COMMAND`
 - Codex permissions: `REPAIR_CODEX_SANDBOX` selects the sandbox passed to
-  `codex exec`. The demo runner defaults it to `danger-full-access` so Codex can
-  query the local Diagnostics Gateway from inside repair worktrees.
+  `codex exec`. The demo runner defaults it to `workspace-write`. Before Codex
+  runs, the Coordinator queries the local Diagnostics Gateway and writes the
+  bounded issue detail to `.repair/evidence.json` inside the repair worktree.
 - Restart options: `REPAIR_COMPOSE_PROJECT_NAME`, `REPAIR_COMPOSE_ENV_FILE`,
   `REPAIR_FLUTTER_LAUNCH_COMMAND`

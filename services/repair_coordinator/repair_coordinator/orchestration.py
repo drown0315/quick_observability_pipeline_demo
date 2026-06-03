@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from repair_coordinator.changes import ChangeGuard
 from repair_coordinator.codex import CodexRunner
+from repair_coordinator.evidence import EvidenceSnapshotWriter
 from repair_coordinator.gateway import GatewayClient
 from repair_coordinator.pull_requests import PullRequestPublisher
 from repair_coordinator.restart import ComponentRestarter
@@ -25,6 +26,7 @@ class RepairOrchestrator:
         restarter: ComponentRestarter,
         workloads: WorkloadRunner,
         pull_requests: PullRequestPublisher,
+        evidence: EvidenceSnapshotWriter | None = None,
         progress: Callable[[str], None] | None = None,
     ) -> None:
         self._store = store
@@ -35,6 +37,7 @@ class RepairOrchestrator:
         self._restarter = restarter
         self._workloads = workloads
         self._pull_requests = pull_requests
+        self._evidence = evidence or EvidenceSnapshotWriter(gateway)
         self._progress = progress
 
     @classmethod
@@ -80,6 +83,8 @@ class RepairOrchestrator:
         attempt_history: list[dict[str, object]] = []
         for attempt in range(1, 4):
             task = self._store.get_task(int(task["task_id"]))
+            self._report(f"attempt {attempt}/3: writing diagnostic evidence snapshot")
+            self._evidence.write(task, progress=self._report)
             self._report(f"attempt {attempt}/3: invoking Codex")
             codex_result = self._codex.invoke(task, attempt=attempt)
             self._report(

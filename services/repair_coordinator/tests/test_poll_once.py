@@ -39,18 +39,38 @@ def gateway_url() -> Iterator[str]:
         """Return one deterministic client issue for every poll."""
 
         def do_GET(self) -> None:
-            assert self.path == "/diagnostics/issues?since=15m&limit=20"
-            body = json.dumps(
-                [
+            if self.path == "/diagnostics/issues/client:123":
+                body = json.dumps(
                     {
-                        "issue_id": "client:123",
-                        "timestamp": "2026-06-01T08:30:00Z",
-                        "service": "todo-flutter-macos",
-                        "exception_type": "StateError",
-                        "message": "todo completion failed",
+                        "summary": {
+                            "issue_id": "client:123",
+                            "timestamp": "2026-06-01T08:30:00Z",
+                            "service": "todo-flutter-macos",
+                            "exception_type": "StateError",
+                            "message": "todo completion failed",
+                        },
+                        "stacktrace": [{"function": "completeTodo"}],
+                        "breadcrumbs": [{"category": "ui.tap"}],
+                        "context": {"environment": "local"},
+                        "trace_correlation": {
+                            "trace_id": None,
+                            "source": "sentry_trace_context",
+                        },
                     }
-                ]
-            ).encode()
+                ).encode()
+            else:
+                assert self.path == "/diagnostics/issues?since=15m&limit=20"
+                body = json.dumps(
+                    [
+                        {
+                            "issue_id": "client:123",
+                            "timestamp": "2026-06-01T08:30:00Z",
+                            "service": "todo-flutter-macos",
+                            "exception_type": "StateError",
+                            "message": "todo completion failed",
+                        }
+                    ]
+                ).encode()
             self.send_response(200)
             self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(body)))
@@ -292,10 +312,14 @@ def test_invoke_codex_runs_repair_prompt_for_prepared_task(
     ]
     prompt = invocation["arguments"][7]
     assert "client:123" in prompt
-    assert "scripts/diagnostics" in prompt
+    assert ".repair/evidence.json" in prompt
     assert "app/lib/" in prompt
     assert "services/todo_api/" in prompt
     assert "harness/" in prompt
+    snapshot = json.loads((worktree_root / "repair-1/.repair/evidence.json").read_text())
+    assert snapshot["issue_id"] == "client:123"
+    assert snapshot["source"] == "diagnostics_gateway"
+    assert snapshot["detail"]["summary"]["message"] == "todo completion failed"
 
 
 def test_invoke_codex_uses_configured_sandbox(

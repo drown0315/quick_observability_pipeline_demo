@@ -70,7 +70,7 @@ class PullRequestPublisher:
         worktree_path = str(task["worktree_path"])
         branch = str(task["branch"])
         issue_id = str(task["issue_id"])
-        self._git(worktree_path, "add", "--all")
+        self._git(worktree_path, "add", "--all", "--", *changes["changed_paths"])
         self._git(worktree_path, "commit", "-m", f"Repair {issue_id}")
         self._git(worktree_path, "push", "--set-upstream", "origin", branch)
         body = (

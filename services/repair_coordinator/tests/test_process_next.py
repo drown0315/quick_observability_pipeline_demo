@@ -25,18 +25,38 @@ def gateway_server() -> Iterator[tuple[str, list[str]]]:
         def do_GET(self) -> None:
             requests.append(self.path)
             query = parse_qs(urlparse(self.path).query)
-            value: list[dict[str, object]] = []
-            if "run_id" not in query:
-                value = [
+            if self.path == "/diagnostics/issues/client:123":
+                body = json.dumps(
                     {
-                        "issue_id": "client:123",
-                        "timestamp": "2026-06-01T08:30:00Z",
-                        "service": "todo-flutter-macos",
-                        "exception_type": "StateError",
-                        "message": "todo completion failed",
+                        "summary": {
+                            "issue_id": "client:123",
+                            "timestamp": "2026-06-01T08:30:00Z",
+                            "service": "todo-flutter-macos",
+                            "exception_type": "StateError",
+                            "message": "todo completion failed",
+                        },
+                        "stacktrace": [{"function": "completeTodo"}],
+                        "breadcrumbs": [{"category": "ui.tap"}],
+                        "context": {"environment": "local"},
+                        "trace_correlation": {
+                            "trace_id": None,
+                            "source": "sentry_trace_context",
+                        },
                     }
-                ]
-            body = json.dumps(value).encode()
+                ).encode()
+            else:
+                value: list[dict[str, object]] = []
+                if "run_id" not in query:
+                    value = [
+                        {
+                            "issue_id": "client:123",
+                            "timestamp": "2026-06-01T08:30:00Z",
+                            "service": "todo-flutter-macos",
+                            "exception_type": "StateError",
+                            "message": "todo completion failed",
+                        }
+                    ]
+                body = json.dumps(value).encode()
             self.send_response(200)
             self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(body)))
@@ -122,6 +142,16 @@ def test_process_next_repairs_validates_and_publishes_pull_request(
     ]
     assert flutter_launch_capture_path.read_text() == str(worktree_root / "repair-1")
     assert any("run_id=" in request for request in gateway_requests)
+    assert (
+        subprocess.run(
+            ["git", "ls-files", ".repair/evidence.json"],
+            check=True,
+            capture_output=True,
+            cwd=worktree_root / "repair-1",
+            text=True,
+        ).stdout
+        == ""
+    )
 
 
 def test_process_next_stops_after_three_disallowed_repair_attempts(
