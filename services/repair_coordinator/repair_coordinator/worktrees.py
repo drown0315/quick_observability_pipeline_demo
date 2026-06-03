@@ -57,7 +57,7 @@ class WorktreeManager:
             "worktree_path": str(worktree_path),
         }
 
-    def reset_attempt(self, task: dict[str, object]) -> None:
+    def restore_attempt_worktree(self, task: dict[str, object]) -> None:
         """Restore one repair worktree before a Codex attempt starts.
 
         Args:
