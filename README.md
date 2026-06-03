@@ -78,15 +78,73 @@ The automatic repair loop works like this:
 These commands use the Flutter macOS desktop target. That is the only demo
 runtime tested so far.
 
+### Prerequisites
+
+Install and configure these local tools before running the full repair loop:
+
+- Docker Desktop, or another Docker runtime with `docker compose`, for the
+  FastAPI backend, OpenTelemetry Collector, VictoriaLogs, VictoriaMetrics, and
+  VictoriaTraces.
+- Flutter with macOS desktop support, plus the required Xcode/macOS build
+  tooling.
+- `uv`, used to run the Python services and workload runner.
+- `flutter-mcp-toolkit`, used by the workload runner and Repair Coordinator to
+  drive the running Flutter App through semantic UI actions.
+- Codex CLI, used by the Repair Coordinator to invoke local repair attempts.
+- GitHub CLI (`gh`) authenticated for the repository, required only when the
+  Coordinator reaches the pull request creation step.
+
+Quick local tool check:
+
+```bash
+docker compose version
+flutter doctor
+uv --version
+flutter-mcp-toolkit --version
+codex --version
+gh auth status
+```
+
+The app must be run as a Flutter macOS debug app. The workload runner talks to
+that running app through `flutter-mcp-toolkit`; it does not click screen
+coordinates directly.
+
+### Sentry Configuration
+
 Create local configuration:
 
 ```bash
 cp .env.example .env
 ```
 
-Fill in the DSN for the Flutter App and a read-only `event:read` API token for
-the Diagnostics Gateway. The token is used only by that local diagnostics
-service and is not passed to the Flutter process.
+Fill in the Sentry fields:
+
+```env
+SENTRY_DSN=...
+SENTRY_AUTH_TOKEN=...
+SENTRY_ORG=...
+SENTRY_PROJECT=todo-flutter-macos
+APP_RELEASE=dev-local
+APP_ENVIRONMENT=local
+```
+
+Use one Sentry SaaS project for Flutter macOS client exceptions. The default
+project slug is `todo-flutter-macos`, but it can be changed with
+`SENTRY_PROJECT`.
+
+Field usage:
+
+- `SENTRY_DSN`: passed to the Flutter App so client exceptions are sent to
+  Sentry.
+- `SENTRY_AUTH_TOKEN`: read-only Sentry API token for the local Diagnostics
+  Gateway. It needs `event:read`. The token is not passed to the Flutter
+  process.
+- `SENTRY_ORG`: Sentry organization slug used by the Gateway API client.
+- `SENTRY_PROJECT`: Sentry project slug used by the Gateway API client.
+- `APP_RELEASE` and `APP_ENVIRONMENT`: passed to Flutter and used to separate
+  local demo events from other runs.
+
+### Start The Demo
 
 Terminal 1: start the backend, Diagnostics Gateway, and observability services.
 
@@ -98,6 +156,12 @@ Terminal 2: start the Flutter macOS App.
 
 ```bash
 ./scripts/run_flutter.sh
+```
+
+In another terminal, confirm the Flutter MCP toolkit can see the running app:
+
+```bash
+flutter-mcp-toolkit doctor --json
 ```
 
 Terminal 3: start the Repair Coordinator. This is the local repair process that
