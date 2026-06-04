@@ -1,5 +1,5 @@
 from collections.abc import Iterator
-from typing import Annotated, Protocol
+from typing import Annotated, Literal, Protocol
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, Path, Query, Request
@@ -106,6 +106,23 @@ class BackendIssueDetail(BaseModel):
     spans: list[dict[str, object]]
     metrics: MetricsWindow
     trace_correlation: TraceCorrelation
+
+
+class BackendOnlyCaseSummary(BaseModel):
+    """Lightweight Diagnostic Case summary backed by one backend issue."""
+
+    case_id: str
+    kind: Literal["backend-only"]
+    timestamp: str
+    backend_issue: BackendIssueSummary
+
+
+class BackendOnlyCaseDetail(BaseModel):
+    """Diagnostic Case detail containing bounded backend evidence."""
+
+    case_id: str
+    kind: Literal["backend-only"]
+    backend: BackendIssueDetail
 
 
 class ClientIssueSummary(BaseModel):
@@ -276,6 +293,64 @@ def list_issues(
     return sorted(issues, key=lambda issue: str(issue["timestamp"]), reverse=True)[
         :limit
     ]
+
+
+@app.get(
+    "/diagnostics/cases",
+    response_model=list[BackendOnlyCaseSummary],
+)
+def list_cases(
+    since: Annotated[str, Query(pattern=r"^\d+[smhd]$")] = "15m",
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    run_id: UUID | None = None,
+    backend_diagnostics: BackendDiagnostics = Depends(get_backend_diagnostics),
+) -> list[dict[str, object]]:
+    """Return lightweight backend-only Diagnostic Case summaries."""
+
+    run_id_value = str(run_id) if run_id is not None else None
+    backend_issues = backend_diagnostics.list_issues(
+        since=since,
+        limit=limit,
+        run_id=run_id_value,
+    )
+    return [
+        {
+            "case_id": issue["issue_id"],
+            "kind": "backend-only",
+            "timestamp": issue["timestamp"],
+            "backend_issue": issue,
+        }
+        for issue in sorted(
+            backend_issues,
+            key=lambda issue: str(issue["timestamp"]),
+            reverse=True,
+        )[:limit]
+    ]
+
+
+@app.get(
+    "/diagnostics/cases/{case_id}",
+    response_model=BackendOnlyCaseDetail,
+)
+def show_case(
+    case_id: Annotated[
+        str,
+        Path(
+            pattern=(
+                r"^backend:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-"
+                r"[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            )
+        ),
+    ],
+    backend_diagnostics: BackendDiagnostics = Depends(get_backend_diagnostics),
+) -> dict[str, object]:
+    """Return bounded backend evidence for one backend-only Diagnostic Case."""
+
+    return {
+        "case_id": case_id,
+        "kind": "backend-only",
+        "backend": backend_diagnostics.get_issue(case_id),
+    }
 
 
 @app.get(

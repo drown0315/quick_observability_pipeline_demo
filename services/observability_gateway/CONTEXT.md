@@ -17,8 +17,13 @@ _Avoid_: Issue, alert, repair task
 
 ## API
 
+- `GET /diagnostics/cases?since=15m&limit=20&run_id=<optional>`
+- `GET /diagnostics/cases/{case_id}`
 - `GET /diagnostics/issues?since=15m&limit=20&run_id=<optional>`
 - `GET /diagnostics/issues/{issue_id}`
+
+Backend-only Diagnostic Case IDs currently reuse backend issue IDs:
+`backend:<uuid>`.
 
 Issue IDs are namespaced: `backend:<uuid>` uses Victoria; `client:<group-id>` uses Sentry.
 
