@@ -73,6 +73,19 @@ The automatic repair loop works like this:
 9. If the scripted app interaction now passes and no new issue appears, the
    Coordinator creates a pull request for the repair.
 
+### Final Result
+
+The final result is an automatically generated repair pull request. In the demo
+run, Codex repaired `client:7520855204`, validated the fix with the
+`mixed_user_workload` workload, and opened PR `#27` from branch
+`codex/repair-1-4` into `main`.
+
+The generated PR records the repair summary, validation run ID, number of
+attempts, and changed files so a maintainer can review the Codex-authored bug
+fix before merging it.
+
+![Codex-generated repair pull request](docs/assets/automated-repair-pr.png)
+
 ## Run Automatic Repair
 
 These commands use the Flutter macOS desktop target. That is the only demo
