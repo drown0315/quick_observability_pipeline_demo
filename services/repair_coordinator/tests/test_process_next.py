@@ -87,12 +87,15 @@ def test_process_next_repairs_validates_and_publishes_pull_request(
     workload_path = tmp_path / "validation.hs.yaml"
     toolkit_path = tmp_path / "fake-flutter-mcp-toolkit"
     toolkit_capture_path = tmp_path / "toolkit-invocations.jsonl"
+    flutter_validator_path = tmp_path / "fake-flutter-validator"
+    flutter_validation_capture_path = tmp_path / "flutter-validation.jsonl"
     flutter_launcher_path = tmp_path / "fake-flutter-launcher"
     flutter_launch_capture_path = tmp_path / "flutter-launch.txt"
     codex_path = tmp_path / "fake-codex"
     gh_path = tmp_path / "fake-gh"
     initialize_git_repository(repository_path, remote_path)
     write_fake_codex(codex_path)
+    write_fake_flutter_validator(flutter_validator_path)
     write_fake_toolkit(toolkit_path)
     write_fake_flutter_launcher(flutter_launcher_path)
     write_fake_gh(gh_path)
@@ -105,6 +108,12 @@ def test_process_next_repairs_validates_and_publishes_pull_request(
         "REPAIR_CODEX_COMMAND": str(codex_path),
         "FLUTTER_MCP_TOOLKIT_COMMAND": str(toolkit_path),
         "FLUTTER_MCP_TOOLKIT_CAPTURE_PATH": str(toolkit_capture_path),
+        "REPAIR_FLUTTER_TEST_COMMAND": f"{flutter_validator_path} test",
+        "REPAIR_FLUTTER_ANALYZE_COMMAND": f"{flutter_validator_path} analyze",
+        "REPAIR_FLUTTER_BUILD_COMMAND": f"{flutter_validator_path} build",
+        "REPAIR_FLUTTER_VALIDATION_CAPTURE_PATH": str(
+            flutter_validation_capture_path
+        ),
         "REPAIR_FLUTTER_LAUNCH_COMMAND": str(flutter_launcher_path),
         "REPAIR_FLUTTER_LAUNCH_CAPTURE_PATH": str(flutter_launch_capture_path),
         "REPAIR_GH_COMMAND": str(gh_path),
@@ -124,6 +133,10 @@ def test_process_next_repairs_validates_and_publishes_pull_request(
         environment=environment,
     )
     result = run_result["processed"][0]
+    flutter_validation_invocations = [
+        json.loads(line)
+        for line in flutter_validation_capture_path.read_text().splitlines()
+    ]
     toolkit_invocations = [
         json.loads(line) for line in toolkit_capture_path.read_text().splitlines()
     ]
@@ -134,6 +147,11 @@ def test_process_next_repairs_validates_and_publishes_pull_request(
     assert result["pr_url"] == "https://github.example.test/demo/pull/1"
     assert run_result["polls"] == 1
     assert run_result["created"] == 1
+    assert flutter_validation_invocations == [
+        {"arguments": ["test"], "cwd": str(worktree_root / "repair-1/app")},
+        {"arguments": ["analyze"], "cwd": str(worktree_root / "repair-1/app")},
+        {"arguments": ["build"], "cwd": str(worktree_root / "repair-1/app")},
+    ]
     assert [entry["name"] for entry in toolkit_invocations] == [
         "discover_debug_apps",
         "discover_debug_apps",
@@ -336,6 +354,24 @@ Path(os.environ["REPAIR_FLUTTER_LAUNCH_CAPTURE_PATH"]).write_text(sys.argv[1])
 """
     )
     launcher_path.chmod(0o755)
+
+
+def write_fake_flutter_validator(validator_path: Path) -> None:
+    """Write a Flutter validator replacement that records command invocations."""
+
+    validator_path.write_text(
+        """#!/usr/bin/env python3
+import json
+import os
+from pathlib import Path
+import sys
+
+with Path(os.environ["REPAIR_FLUTTER_VALIDATION_CAPTURE_PATH"]).open("a") as capture:
+    capture.write(json.dumps({"arguments": sys.argv[1:], "cwd": os.getcwd()}) + "\\n")
+print("validation passed")
+"""
+    )
+    validator_path.chmod(0o755)
 
 
 def write_disallowed_fake_codex(codex_path: Path) -> None:
