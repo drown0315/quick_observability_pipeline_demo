@@ -9,6 +9,7 @@ from repair_coordinator.gateway import GatewayClient
 from repair_coordinator.pull_requests import PullRequestPublisher
 from repair_coordinator.restart import ComponentRestarter
 from repair_coordinator.tasks import RepairTaskStore
+from repair_coordinator.validation import FlutterValidator
 from repair_coordinator.workloads import ToolkitClient, WorkloadRunner
 from repair_coordinator.worktrees import WorktreeManager
 
@@ -24,6 +25,7 @@ class RepairOrchestrator:
         codex: CodexRunner,
         change_guard: ChangeGuard,
         restarter: ComponentRestarter,
+        flutter_validator: FlutterValidator,
         workloads: WorkloadRunner,
         pull_requests: PullRequestPublisher,
         evidence: EvidenceSnapshotWriter | None = None,
@@ -35,6 +37,7 @@ class RepairOrchestrator:
         self._codex = codex
         self._change_guard = change_guard
         self._restarter = restarter
+        self._flutter_validator = flutter_validator
         self._workloads = workloads
         self._pull_requests = pull_requests
         self._evidence = evidence or EvidenceSnapshotWriter(gateway)
@@ -58,6 +61,7 @@ class RepairOrchestrator:
             codex=CodexRunner.from_environment(verbose=verbose),
             change_guard=ChangeGuard(),
             restarter=ComponentRestarter.from_environment(toolkit, progress=progress),
+            flutter_validator=FlutterValidator.from_environment(progress=progress),
             workloads=WorkloadRunner.from_environment(toolkit),
             pull_requests=PullRequestPublisher.from_environment(),
             progress=progress,
@@ -116,6 +120,10 @@ class RepairOrchestrator:
                 continue
 
             try:
+                self._report(f"attempt {attempt}/3: running host Flutter validation")
+                flutter_validation = self._flutter_validator.validate(
+                    task, changes["changed_paths"]
+                )
                 self._report(f"attempt {attempt}/3: restarting changed components")
                 self._restarter.restart(task, changes["changed_paths"])
                 run_id = str(uuid4())
@@ -147,7 +155,12 @@ class RepairOrchestrator:
                 self._store.record_attempt_history(int(task["task_id"]), attempt_history)
                 continue
             attempt_result.update(
-                {"run_id": run_id, "validation": validation, "new_issues": new_issues}
+                {
+                    "flutter_validation": flutter_validation,
+                    "run_id": run_id,
+                    "validation": validation,
+                    "new_issues": new_issues,
+                }
             )
             attempt_history.append(attempt_result)
             self._store.record_attempt_history(int(task["task_id"]), attempt_history)

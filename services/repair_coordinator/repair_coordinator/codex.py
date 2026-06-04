@@ -204,8 +204,9 @@ Do not modify protected validation or observability paths:
 - docker-compose.yml
 - scripts/diagnostics
 
-Diagnose the issue and make the smallest product-code repair. Do not restart
-components yourself; the Coordinator validation flow restarts affected services
+Diagnose the issue and make the smallest product-code repair. Do not run
+Flutter validation commands or restart components yourself; the Coordinator
+validation flow runs host-side Flutter checks and restarts affected services
 after your diff is checked. Do not run a bare `docker compose` command from the
 repair worktree. If manual compose inspection is unavoidable, pass the
 `REPAIR_COMPOSE_ENV_FILE` environment variable to Docker Compose with

@@ -66,3 +66,5 @@ The normal loop is:
   bounded issue detail to `.repair/evidence.json` inside the repair worktree.
 - Restart options: `REPAIR_COMPOSE_PROJECT_NAME`, `REPAIR_COMPOSE_ENV_FILE`,
   `REPAIR_FLUTTER_LAUNCH_COMMAND`
+- Host-side Flutter validation: `REPAIR_FLUTTER_TEST_COMMAND`,
+  `REPAIR_FLUTTER_ANALYZE_COMMAND`, `REPAIR_FLUTTER_BUILD_COMMAND`
