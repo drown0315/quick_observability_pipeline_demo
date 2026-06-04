@@ -184,6 +184,42 @@ def test_list_issues_supports_filters_and_returns_backend_and_client_summaries(
     ]
 
 
+def test_list_cases_returns_lightweight_backend_only_summaries(
+    client: TestClient,
+    backend_diagnostics: StubBackendDiagnostics,
+    client_diagnostics: StubClientDiagnostics,
+) -> None:
+    run_id = str(uuid4())
+
+    response = client.get(
+        "/diagnostics/cases",
+        params={"since": "30m", "limit": 5, "run_id": run_id},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "case_id": ISSUE_ID,
+            "kind": "backend-only",
+            "timestamp": "2026-05-31T08:30:00Z",
+            "backend_issue": {
+                "issue_id": ISSUE_ID,
+                "timestamp": "2026-05-31T08:30:00Z",
+                "service": "todo-api",
+                "exception_type": "RuntimeError",
+                "message": "todo deletion failed",
+                "trace_id": "abc",
+                "request_id": "request-123",
+                "run_id": run_id,
+            },
+        }
+    ]
+    assert backend_diagnostics.list_calls == [
+        {"since": "30m", "limit": 5, "run_id": run_id}
+    ]
+    assert client_diagnostics.list_calls == []
+
+
 def test_show_backend_issue_returns_bounded_diagnostic_evidence(
     client: TestClient, backend_diagnostics: StubBackendDiagnostics
 ) -> None:
@@ -216,6 +252,47 @@ def test_show_backend_issue_returns_bounded_diagnostic_evidence(
         },
     }
     assert backend_diagnostics.show_calls == [ISSUE_ID]
+
+
+def test_show_backend_only_case_returns_bounded_backend_evidence(
+    client: TestClient,
+    backend_diagnostics: StubBackendDiagnostics,
+    client_diagnostics: StubClientDiagnostics,
+) -> None:
+    response = client.get(f"/diagnostics/cases/{ISSUE_ID}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "case_id": ISSUE_ID,
+        "kind": "backend-only",
+        "backend": {
+            "summary": {
+                "issue_id": ISSUE_ID,
+                "timestamp": "2026-05-31T08:30:00Z",
+                "service": "todo-api",
+                "exception_type": "RuntimeError",
+                "message": "todo deletion failed",
+                "trace_id": "abc",
+                "request_id": "request-123",
+                "run_id": None,
+            },
+            "stacktrace": "Traceback (most recent call last):\nRuntimeError",
+            "logs": [{"event_type": "unhandled_exception", "issue_id": ISSUE_ID}],
+            "spans": [{"traceID": "abc", "operationName": "DELETE /todos/{todo_id}"}],
+            "metrics": {
+                "start": "2026-05-31T08:25:00Z",
+                "end": "2026-05-31T08:35:00Z",
+                "step_seconds": 60,
+                "series": {"request_rate": []},
+            },
+            "trace_correlation": {
+                "trace_id": "abc",
+                "source": "backend_trace_context",
+            },
+        },
+    }
+    assert backend_diagnostics.show_calls == [ISSUE_ID]
+    assert client_diagnostics.show_calls == []
 
 
 def test_show_client_issue_returns_bounded_diagnostic_evidence(
