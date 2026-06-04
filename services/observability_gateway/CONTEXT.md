@@ -24,6 +24,8 @@ _Avoid_: Issue, alert, repair task
 
 Backend-only Diagnostic Case IDs currently reuse backend issue IDs:
 `backend:<uuid>`.
+Client-only Diagnostic Case IDs include the Sentry group and bound event:
+`client:<group-id>:<event-id>`.
 
 Issue IDs are namespaced: `backend:<uuid>` uses Victoria; `client:<group-id>` uses Sentry.
 

@@ -26,6 +26,7 @@ def test_list_issues_uses_read_only_sentry_api_and_returns_client_summaries() ->
                             "type": "StateError",
                             "value": "temporary client exception",
                         },
+                        "latestEvent": {"eventID": "evt-bound-123"},
                     }
                 ],
             )
@@ -49,6 +50,7 @@ def test_list_issues_uses_read_only_sentry_api_and_returns_client_summaries() ->
             "service": "todo-flutter-macos",
             "exception_type": "StateError",
             "message": "temporary client exception",
+            "event_id": "evt-bound-123",
         }
     ]
     assert len(requests) == 1
@@ -154,6 +156,92 @@ def test_get_issue_returns_bounded_stacktrace_breadcrumbs_and_client_context() -
     )
     assert dict(requests[0].url.params) == {"environment": "local"}
     assert requests[0].headers["authorization"] == "Bearer read-only-token"
+
+
+def test_get_issue_event_uses_bound_event_id_instead_of_latest_event() -> None:
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path.endswith("/events/latest/"):
+            return httpx.Response(
+                200,
+                json={
+                    "dateCreated": "2026-05-31T08:45:00Z",
+                    "title": "StateError: latest event",
+                    "entries": [],
+                },
+            )
+        assert (
+            request.url.path
+            == "/api/0/organizations/demo-org/issues/123/events/evt-bound-123/"
+        )
+        return httpx.Response(
+            200,
+            json={
+                "dateCreated": "2026-05-31T08:30:00Z",
+                "title": "StateError: bound client exception",
+                "environment": "local",
+                "entries": [
+                    {
+                        "type": "exception",
+                        "data": {
+                            "values": [
+                                {
+                                    "type": "StateError",
+                                    "value": "bound client exception",
+                                    "stacktrace": {
+                                        "frames": [{"filename": "bound.dart"}]
+                                    },
+                                }
+                            ]
+                        },
+                    },
+                    {
+                        "type": "breadcrumbs",
+                        "data": {"values": [{"category": "http"}]},
+                    },
+                ],
+                "contexts": {
+                    "trace": {"trace_id": "11111111111111111111111111111111"}
+                },
+                "tags": [{"key": "session_id", "value": "session-bound"}],
+            },
+        )
+
+    diagnostics = SentryClientDiagnostics(
+        api_url="https://sentry.io/api/0",
+        auth_token="read-only-token",
+        organization="demo-org",
+        project="todo-flutter-macos",
+        environment="local",
+        client=httpx.Client(transport=httpx.MockTransport(respond)),
+    )
+
+    detail = diagnostics.get_issue_event(ISSUE_ID, "evt-bound-123")
+
+    assert detail["summary"] == {
+        "issue_id": ISSUE_ID,
+        "timestamp": "2026-05-31T08:30:00Z",
+        "service": "todo-flutter-macos",
+        "exception_type": "StateError",
+        "message": "bound client exception",
+    }
+    assert detail["stacktrace"] == [{"filename": "bound.dart"}]
+    assert detail["breadcrumbs"] == [{"category": "http"}]
+    assert detail["context"] == {
+        "release": None,
+        "environment": "local",
+        "user_id": None,
+        "session_id": "session-bound",
+    }
+    assert detail["trace_correlation"] == {
+        "trace_id": "11111111111111111111111111111111",
+        "source": "sentry_trace_context",
+    }
+    assert [request.url.path for request in requests] == [
+        "/api/0/organizations/demo-org/issues/123/events/evt-bound-123/"
+    ]
 
 
 def test_get_issue_reports_unknown_client_issue() -> None:
