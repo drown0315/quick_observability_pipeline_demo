@@ -147,7 +147,30 @@ class SentryClientDiagnostics:
         if response.status_code == 404:
             raise ClientIssueNotFoundError(issue_id)
         response.raise_for_status()
-        event = response.json()
+        return self._detail_from_event(issue_id, response.json())
+
+    def get_issue_event(self, issue_id: str, event_id: str) -> dict[str, object]:
+        """Return bounded client exception context from one bound Sentry event."""
+
+        group_id = self._group_id_from(issue_id)
+        response = self._client.get(
+            (
+                f"{self._api_url}/organizations/{self._organization}/issues/"
+                f"{group_id}/events/{event_id}/"
+            ),
+            headers=self._headers(),
+            params={"environment": self._environment},
+        )
+        if response.status_code == 404:
+            raise ClientIssueNotFoundError(issue_id)
+        response.raise_for_status()
+        return self._detail_from_event(issue_id, response.json())
+
+    def _detail_from_event(
+        self, issue_id: str, event: dict[str, object]
+    ) -> dict[str, object]:
+        """Normalize one Sentry event into bounded client diagnostic detail."""
+
         exception = self._exception_from(event)
         release = event.get("release")
         if isinstance(release, dict):
@@ -251,10 +274,16 @@ class SentryClientDiagnostics:
         metadata = issue.get("metadata", {})
         if not isinstance(metadata, dict):
             metadata = {}
-        return {
+        summary = {
             "issue_id": f"client:{issue['id']}",
             "timestamp": issue["lastSeen"],
             "service": self._project,
             "exception_type": metadata.get("type", "Exception"),
             "message": metadata.get("value", issue["title"]),
         }
+        latest_event = issue.get("latestEvent")
+        if isinstance(latest_event, dict):
+            event_id = latest_event.get("eventID")
+            if isinstance(event_id, str) and event_id:
+                summary["event_id"] = event_id
+        return summary

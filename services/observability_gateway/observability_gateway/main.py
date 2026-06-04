@@ -139,6 +139,16 @@ class ClientIssueSummary(BaseModel):
     message: str
 
 
+class ClientOnlyCaseSummary(BaseModel):
+    """Lightweight Diagnostic Case summary backed by one bound Sentry event."""
+
+    case_id: str
+    kind: Literal["client-only"]
+    timestamp: str
+    client_issue: ClientIssueSummary
+    event_id: str
+
+
 class ClientContext(BaseModel):
     """Flutter client context attached to one Sentry exception event."""
 
@@ -156,6 +166,15 @@ class ClientIssueDetail(BaseModel):
     breadcrumbs: list[dict[str, object]]
     context: ClientContext
     trace_correlation: TraceCorrelation
+
+
+class ClientOnlyCaseDetail(BaseModel):
+    """Diagnostic Case detail containing bounded Sentry event evidence."""
+
+    case_id: str
+    kind: Literal["client-only"]
+    event_id: str
+    client: ClientIssueDetail
 
 
 class BackendDiagnostics(Protocol):
@@ -184,6 +203,8 @@ class ClientDiagnostics(Protocol):
     ) -> list[dict[str, object]]: ...
 
     def get_issue(self, issue_id: str) -> dict[str, object]: ...
+
+    def get_issue_event(self, issue_id: str, event_id: str) -> dict[str, object]: ...
 
 
 def get_backend_diagnostics() -> Iterator[BackendDiagnostics]:
@@ -297,15 +318,16 @@ def list_issues(
 
 @app.get(
     "/diagnostics/cases",
-    response_model=list[BackendOnlyCaseSummary],
+    response_model=list[BackendOnlyCaseSummary | ClientOnlyCaseSummary],
 )
 def list_cases(
     since: Annotated[str, Query(pattern=r"^\d+[smhd]$")] = "15m",
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     run_id: UUID | None = None,
     backend_diagnostics: BackendDiagnostics = Depends(get_backend_diagnostics),
+    client_diagnostics: ClientDiagnostics = Depends(get_client_diagnostics),
 ) -> list[dict[str, object]]:
-    """Return lightweight backend-only Diagnostic Case summaries."""
+    """Return lightweight backend-only and client-only Diagnostic Case summaries."""
 
     run_id_value = str(run_id) if run_id is not None else None
     backend_issues = backend_diagnostics.list_issues(
@@ -313,7 +335,12 @@ def list_cases(
         limit=limit,
         run_id=run_id_value,
     )
-    return [
+    client_issues = client_diagnostics.list_issues(
+        since=since,
+        limit=limit,
+        run_id=run_id_value,
+    )
+    cases = [
         {
             "case_id": issue["issue_id"],
             "kind": "backend-only",
@@ -326,26 +353,49 @@ def list_cases(
             reverse=True,
         )[:limit]
     ]
+    cases += [
+        {
+            "case_id": f"{issue['issue_id']}:{issue['event_id']}",
+            "kind": "client-only",
+            "timestamp": issue["timestamp"],
+            "client_issue": issue,
+            "event_id": issue["event_id"],
+        }
+        for issue in client_issues
+        if "event_id" in issue
+    ]
+    return sorted(cases, key=lambda case: str(case["timestamp"]), reverse=True)[:limit]
 
 
 @app.get(
     "/diagnostics/cases/{case_id}",
-    response_model=BackendOnlyCaseDetail,
+    response_model=BackendOnlyCaseDetail | ClientOnlyCaseDetail,
 )
 def show_case(
     case_id: Annotated[
         str,
         Path(
             pattern=(
-                r"^backend:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-"
-                r"[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                r"^(backend:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-"
+                r"[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|"
+                r"client:\d+:[^:/]+)$"
             )
         ),
     ],
     backend_diagnostics: BackendDiagnostics = Depends(get_backend_diagnostics),
+    client_diagnostics: ClientDiagnostics = Depends(get_client_diagnostics),
 ) -> dict[str, object]:
-    """Return bounded backend evidence for one backend-only Diagnostic Case."""
+    """Return bounded evidence for one backend-only or client-only Diagnostic Case."""
 
+    if case_id.startswith("client:"):
+        issue_prefix, group_id, event_id = case_id.split(":", 2)
+        issue_id = f"{issue_prefix}:{group_id}"
+        return {
+            "case_id": case_id,
+            "kind": "client-only",
+            "event_id": event_id,
+            "client": client_diagnostics.get_issue_event(issue_id, event_id),
+        }
     return {
         "case_id": case_id,
         "kind": "backend-only",

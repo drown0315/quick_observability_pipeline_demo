@@ -15,6 +15,8 @@ from observability_gateway.victoria import BackendIssueNotFoundError
 ISSUE_ID = "backend:00000000-0000-0000-0000-000000000123"
 UNKNOWN_ISSUE_ID = "backend:00000000-0000-0000-0000-000000000999"
 CLIENT_ISSUE_ID = "client:123"
+CLIENT_EVENT_ID = "evt-bound-123"
+CLIENT_CASE_ID = f"{CLIENT_ISSUE_ID}:{CLIENT_EVENT_ID}"
 UNKNOWN_CLIENT_ISSUE_ID = "client:999"
 
 
@@ -102,6 +104,7 @@ class StubClientDiagnostics:
     def __init__(self) -> None:
         self.list_calls: list[dict[str, object]] = []
         self.show_calls: list[str] = []
+        self.event_calls: list[dict[str, str]] = []
 
     def list_issues(
         self, *, since: str, limit: int, run_id: str | None
@@ -114,6 +117,7 @@ class StubClientDiagnostics:
                 "service": "todo-flutter-macos",
                 "exception_type": "StateError",
                 "message": "temporary client exception",
+                "event_id": CLIENT_EVENT_ID,
             }
         ]
 
@@ -139,6 +143,30 @@ class StubClientDiagnostics:
             },
             "trace_correlation": {
                 "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+                "source": "sentry_trace_context",
+            },
+        }
+
+    def get_issue_event(self, issue_id: str, event_id: str) -> dict[str, object]:
+        self.event_calls.append({"issue_id": issue_id, "event_id": event_id})
+        return {
+            "summary": {
+                "issue_id": issue_id,
+                "timestamp": "2026-05-31T08:31:00Z",
+                "service": "todo-flutter-macos",
+                "exception_type": "StateError",
+                "message": "bound client exception",
+            },
+            "stacktrace": [{"filename": "bound.dart", "lineNo": 34}],
+            "breadcrumbs": [{"category": "http"}],
+            "context": {
+                "release": "dev-20260531-001",
+                "environment": "local",
+                "user_id": "demo-user",
+                "session_id": "session-bound",
+            },
+            "trace_correlation": {
+                "trace_id": "11111111111111111111111111111111",
                 "source": "sentry_trace_context",
             },
         }
@@ -197,27 +225,61 @@ def test_list_cases_returns_lightweight_backend_only_summaries(
     )
 
     assert response.status_code == 200
-    assert response.json() == [
-        {
-            "case_id": ISSUE_ID,
-            "kind": "backend-only",
+    assert {
+        "case_id": ISSUE_ID,
+        "kind": "backend-only",
+        "timestamp": "2026-05-31T08:30:00Z",
+        "backend_issue": {
+            "issue_id": ISSUE_ID,
             "timestamp": "2026-05-31T08:30:00Z",
-            "backend_issue": {
-                "issue_id": ISSUE_ID,
-                "timestamp": "2026-05-31T08:30:00Z",
-                "service": "todo-api",
-                "exception_type": "RuntimeError",
-                "message": "todo deletion failed",
-                "trace_id": "abc",
-                "request_id": "request-123",
-                "run_id": run_id,
-            },
-        }
-    ]
+            "service": "todo-api",
+            "exception_type": "RuntimeError",
+            "message": "todo deletion failed",
+            "trace_id": "abc",
+            "request_id": "request-123",
+            "run_id": run_id,
+        },
+    } in response.json()
     assert backend_diagnostics.list_calls == [
         {"since": "30m", "limit": 5, "run_id": run_id}
     ]
-    assert client_diagnostics.list_calls == []
+    assert client_diagnostics.list_calls == [
+        {"since": "30m", "limit": 5, "run_id": run_id}
+    ]
+
+
+def test_list_cases_returns_lightweight_client_only_summaries(
+    client: TestClient,
+    backend_diagnostics: StubBackendDiagnostics,
+    client_diagnostics: StubClientDiagnostics,
+) -> None:
+    run_id = str(uuid4())
+
+    response = client.get(
+        "/diagnostics/cases",
+        params={"since": "30m", "limit": 5, "run_id": run_id},
+    )
+
+    assert response.status_code == 200
+    assert response.json()[0] == {
+        "case_id": CLIENT_CASE_ID,
+        "kind": "client-only",
+        "timestamp": "2026-05-31T08:31:00Z",
+        "client_issue": {
+            "issue_id": CLIENT_ISSUE_ID,
+            "timestamp": "2026-05-31T08:31:00Z",
+            "service": "todo-flutter-macos",
+            "exception_type": "StateError",
+            "message": "temporary client exception",
+        },
+        "event_id": CLIENT_EVENT_ID,
+    }
+    assert backend_diagnostics.list_calls == [
+        {"since": "30m", "limit": 5, "run_id": run_id}
+    ]
+    assert client_diagnostics.list_calls == [
+        {"since": "30m", "limit": 5, "run_id": run_id}
+    ]
 
 
 def test_show_backend_issue_returns_bounded_diagnostic_evidence(
@@ -292,6 +354,44 @@ def test_show_backend_only_case_returns_bounded_backend_evidence(
         },
     }
     assert backend_diagnostics.show_calls == [ISSUE_ID]
+    assert client_diagnostics.show_calls == []
+
+
+def test_show_client_only_case_returns_bound_event_evidence(
+    client: TestClient, client_diagnostics: StubClientDiagnostics
+) -> None:
+    response = client.get(f"/diagnostics/cases/{CLIENT_CASE_ID}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "case_id": CLIENT_CASE_ID,
+        "kind": "client-only",
+        "event_id": CLIENT_EVENT_ID,
+        "client": {
+            "summary": {
+                "issue_id": CLIENT_ISSUE_ID,
+                "timestamp": "2026-05-31T08:31:00Z",
+                "service": "todo-flutter-macos",
+                "exception_type": "StateError",
+                "message": "bound client exception",
+            },
+            "stacktrace": [{"filename": "bound.dart", "lineNo": 34}],
+            "breadcrumbs": [{"category": "http"}],
+            "context": {
+                "release": "dev-20260531-001",
+                "environment": "local",
+                "user_id": "demo-user",
+                "session_id": "session-bound",
+            },
+            "trace_correlation": {
+                "trace_id": "11111111111111111111111111111111",
+                "source": "sentry_trace_context",
+            },
+        },
+    }
+    assert client_diagnostics.event_calls == [
+        {"issue_id": CLIENT_ISSUE_ID, "event_id": CLIENT_EVENT_ID}
+    ]
     assert client_diagnostics.show_calls == []
 
 
