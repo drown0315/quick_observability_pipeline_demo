@@ -2,6 +2,12 @@
 
 Read-only FastAPI service that gives Codex one diagnostics entry point across Sentry client events and Victoria backend telemetry.
 
+## Language
+
+**Diagnostic Case**:
+A failure record prepared for repair diagnosis from one or more correlated diagnostic sources.
+_Avoid_: Issue, alert, repair task
+
 ## Key Files
 
 - `observability_gateway/main.py` - FastAPI routes, response models, adapter dispatch.

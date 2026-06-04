@@ -15,6 +15,15 @@ The prototype simulates defects that escaped pre-release testing. The injected d
 - Grafana, Jaeger UI, or additional observability dashboards.
 - Full client log upload or sensitive Todo content collection.
 
+## Known Defects
+
+- Backend issue IDs currently identify individual `unhandled_exception` events,
+  not grouped backend defect classes. Repeated backend failures with the same
+  exception type and stacktrace receive different `backend:<uuid>` identifiers,
+  so backend-only repair tasks are not deduplicated by shared root cause. The
+  same backend bug can therefore create duplicate repair tasks or PRs when it
+  is triggered multiple times.
+
 ## Topology
 
 ```text
